@@ -1,0 +1,42 @@
+# yaml-language-server: $schema=../docs/questionnaire.schema.json
+#
+# umfrage — Minimal Working Example
+# A simple questionnaire demonstrating all three answer types.
+
+title: "Quick Feedback Survey"
+version: "1.0"
+
+organizer:
+  name: "Survey Team"
+  institution: "Example Organisation"
+  email: "survey@example.org"
+
+respondent_fields:
+  - label: "Name"
+  - label: "Institution"
+  - label: "Email"
+    required: false
+
+sections:
+  - title: "Overall Experience"
+    questions:
+      - id: "EX.Q1"
+        text: "How would you rate your overall experience?"
+        answer:
+          type: scale
+          min_value: 1
+          max_value: 5
+          description: "1 = very poor, 5 = excellent"
+        required: true
+
+      - id: "EX.Q2"
+        text: "Would you recommend us to others?"
+        answer:
+          type: yes_no
+        required: true
+
+      - id: "EX.Q3"
+        text: "Any other comments or suggestions?"
+        answer:
+          type: freetext
+        required: false

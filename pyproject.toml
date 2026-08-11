@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "umfrage"
+version = "0.1.0"
+description = "A CLI tool for creating, distributing, and collecting Excel-based questionnaires"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "umfrage contributors" }]
+requires-python = ">=3.10"
+dependencies = [
+    "click>=8.1",
+    "openpyxl>=3.1",
+    "pydantic>=2.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+]
+
+[project.scripts]
+umfrage = "umfrage.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["umfrage*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-v"
+
+[tool.coverage.run]
+source = ["umfrage"]
+omit = ["tests/*"]

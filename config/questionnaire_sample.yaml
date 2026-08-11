@@ -1,0 +1,150 @@
+# yaml-language-server: $schema=../docs/questionnaire.schema.json
+#
+# ──────────────────────────────────────────────────────────────────────────────
+# umfrage — Questionnaire Sample Configuration
+# ──────────────────────────────────────────────────────────────────────────────
+#
+# This file is an annotated template for creating questionnaire configurations.
+# Copy it to questionnaire.yaml (which is gitignored) and edit to fit your needs.
+#
+# TIP: Add the yaml-language-server line above as the first line of your YAML
+#      file to enable IDE autocompletion and inline validation in VS Code
+#      (requires the YAML extension by Red Hat).
+#
+# Run a syntax/completeness check at any time:
+#   umfrage validate config/questionnaire.yaml
+#
+# Generate the Excel questionnaire:
+#   umfrage generate config/questionnaire.yaml --metadata-file
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Questionnaire identity ────────────────────────────────────────────────────
+
+# Title displayed as the large header in the generated Excel file.
+# Also used to derive the output filename slug (e.g. "annual-cooperation-survey").
+title: "Annual Cooperation Survey 2024"
+
+# Version string — increment this when you change questions after distributing
+# so the collector can detect mismatches.
+version: "1.0"
+
+# ── Organizer information ─────────────────────────────────────────────────────
+
+# Information about the person or organisation running the survey.
+# Shown in the organizer info row of the Excel questionnaire.
+organizer:
+  name: "Dr. Jane Smith"              # Full name of the organizer
+  institution: "Research Institute XYZ" # Institution or organisation name
+  email: "j.smith@xyz-institute.org"  # Contact email (must be a valid format)
+  phone: "+49 89 12345-678"           # Optional contact phone number
+  # phone: null                       # Set to null or omit if not available
+
+# ── Respondent information fields ─────────────────────────────────────────────
+
+# Each respondent fills these fields in before answering the questions.
+# At least one field is required.
+# TIP: Include an "Institution" field — the collector uses it as the column
+#      header in the result spreadsheet.
+respondent_fields:
+  - label: "Name"           # Display label shown next to the input cell
+    required: true          # True by default; false means the field may be left blank
+  - label: "Institution"
+    required: true
+  - label: "Email"
+    required: false         # Optional field — respondents may leave this blank
+
+# ── Sections and questions ────────────────────────────────────────────────────
+#
+# Sections group related questions. Each section gets a colored header row
+# in the Excel file.
+#
+# Each question needs:
+#   id     – globally unique slug (letters, digits, dots, hyphens, underscores)
+#   text   – the full question text shown to respondents
+#   answer – type and constraints (see below for all types)
+#   comment  – optional extra context / scale labels shown in the Comment column
+#   required – whether the question must be answered (default: true)
+#
+# ANSWER TYPES:
+#   scale    – integer in [min_value, max_value]; dropdown validates the range
+#   yes_no   – "Yes" or "No" dropdown; no min/max values needed
+#   freetext – any text; no data validation applied
+# ─────────────────────────────────────────────────────────────────────────────
+
+sections:
+  # ── Section 1: General Satisfaction ────────────────────────────────────────
+  - title: "General Satisfaction"
+    questions:
+      - id: "GEN.Q1"
+        text: "How satisfied are you with the overall cooperation over the past year?"
+        answer:
+          type: scale
+          min_value: 1
+          max_value: 5
+          description: "1 = not satisfied at all, 5 = very satisfied"
+        # comment overrides the auto-generated scale hint
+        comment: "1 = not satisfied, 3 = neutral, 5 = very satisfied"
+        required: true
+
+      - id: "GEN.Q2"
+        text: "Would you be willing to continue this cooperation next year?"
+        answer:
+          type: yes_no
+        required: true
+
+      - id: "GEN.Q3"
+        text: "Please share any additional comments on the general cooperation."
+        answer:
+          type: freetext
+          description: "Free text, max. 3–4 sentences"
+        required: false  # Optional — respondents may leave this blank
+
+  # ── Section 2: Technical Quality ───────────────────────────────────────────
+  - title: "Technical Quality"
+    questions:
+      - id: "TECH.Q1"
+        text: "How would you rate the technical quality of the provided data and tools?"
+        answer:
+          type: scale
+          min_value: 1
+          max_value: 10
+          description: "1 = very poor, 5 = adequate, 10 = excellent"
+        required: true
+
+      - id: "TECH.Q2"
+        text: "Did you experience any significant technical issues during the project?"
+        answer:
+          type: yes_no
+        required: true
+
+      - id: "TECH.Q3"
+        text: >
+          If you answered 'Yes' to TECH.Q2, please describe the issues
+          and how they were resolved.
+        answer:
+          type: freetext
+        comment: "Only fill in if you answered 'Yes' to TECH.Q2"
+        required: false
+
+  # ── Section 3: Communication and Support ──────────────────────────────────
+  - title: "Communication and Support"
+    questions:
+      - id: "COM.Q1"
+        text: "How would you rate the responsiveness of the organizer's team?"
+        answer:
+          type: scale
+          min_value: 1
+          max_value: 5
+        required: true
+
+      - id: "COM.Q2"
+        text: "Were all your queries and issues addressed in a satisfactory manner?"
+        answer:
+          type: yes_no
+        required: true
+
+      - id: "COM.Q3"
+        text: "What could be improved in the communication process?"
+        answer:
+          type: freetext
+        required: false

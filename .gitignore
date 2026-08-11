@@ -1,0 +1,62 @@
+# ── Virtual environment infrastructure (venv root layout) ─────────────────────
+bin/
+lib/
+lib64
+include/
+share/
+pyvenv.cfg
+CACHEDIR.TAG
+
+# ── Python build and cache artefacts ──────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# ── Testing and coverage ───────────────────────────────────────────────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# ── Environment and secrets ────────────────────────────────────────────────────
+.env
+.env.*
+*.secret
+
+# ── IDE / editor specifics ─────────────────────────────────────────────────────
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+*~
+
+# ── OS artefacts ───────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+
+# ── Nested virtual environments (not the workspace venv itself) ───────────────
+.venv/
+venv/
+env/
+
+# ── Actual questionnaire configs containing real institution data ──────────────
+# Track: config/questionnaire_sample.yaml  (annotated template, safe to commit)
+# Track: config/style.yaml                 (shared appearance config)
+# Ignore: config/questionnaire.yaml        (real data with institution details)
+config/questionnaire.yaml
+
+# ── Intentionally TRACKED (not ignored) ───────────────────────────────────────
+# config/questionnaire_sample.yaml  ← annotated template
+# config/style.yaml                 ← shared appearance config
+# examples/                         ← reference examples
+# docs/                             ← guides and schema
+# *.xlsx                            ← response files and results (audit trail)
+#
+# Excel files are binary but deliberately tracked so the full
+# distribute-collect-audit cycle is reproducible from the repository.
