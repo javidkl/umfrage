@@ -47,6 +47,7 @@ from umfrage.styles import (
     make_fill,
     make_font,
 )
+from umfrage.translator import Translator
 
 # Column indices (1-based) for the Questionnaire sheet
 COL_ID = 1       # A — question identifier
@@ -84,7 +85,8 @@ def generate_questionnaire(
     ws = wb.active
     ws.title = "Questionnaire"
 
-    _build_questionnaire_sheet(ws, questionnaire, style)
+    translator = Translator(questionnaire.language)
+    _build_questionnaire_sheet(ws, questionnaire, style, translator)
     _build_meta_sheet(wb, questionnaire)
     _apply_sheet_protection(ws, style)
 
@@ -127,7 +129,7 @@ def write_metadata_file(questionnaire: Questionnaire, output_path: Path) -> Path
 
 # ── Internal sheet builders ───────────────────────────────────────────────────
 
-def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleConfig) -> None:
+def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleConfig, translator: Translator) -> None:
     """Populate the main 'Questionnaire' worksheet."""
     cw = style.column_widths
     ws.column_dimensions[get_column_letter(COL_ID)].width = cw.question_id
@@ -149,9 +151,10 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
     # ── Row 2: Organizer info ─────────────────────────────────────────────────
     org = questionnaire.organizer
     organizer_text = (
-        f"Organizer: {org.name}  |  Institution: {org.institution}  |  "
-        f"Email: {org.email}"
-        + (f"  |  Phone: {org.phone}" if org.phone else "")
+        f"{translator.t('label_organizer')}: {org.name}  |  "
+        f"{translator.t('label_institution')}: {org.institution}  |  "
+        f"{translator.t('label_email')}: {org.email}"
+        + (f"  |  {translator.t('label_phone')}: {org.phone}" if org.phone else "")
     )
     ws.row_dimensions[row].height = 18
     org_cell = ws.cell(row=row, column=COL_ID, value=organizer_text)
@@ -170,7 +173,7 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
 
     # ── Respondent Information section ───────────────────────────────────────
     ws.row_dimensions[row].height = 18
-    resp_label = ws.cell(row=row, column=COL_ID, value="RESPONDENT INFORMATION")
+    resp_label = ws.cell(row=row, column=COL_ID, value=translator.t("label_respondent_information"))
     apply_respondent_header_style(resp_label, style)
     ws.merge_cells(
         start_row=row, start_column=COL_ID, end_row=row, end_column=TOTAL_COLS
@@ -212,7 +215,12 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
         ws.row_dimensions[row].height = 14
         for col, header in zip(
             [COL_ID, COL_TEXT, COL_ANSWER, COL_COMMENT],
-            ["ID", "Question", "Answer", "Scale / Comment"],
+            [
+                translator.t("col_id"),
+                translator.t("col_question"),
+                translator.t("col_answer"),
+                translator.t("col_scale_comment"),
+            ],
         ):
             cell = ws.cell(row=row, column=col, value=header)
             apply_section_style(cell, style)
@@ -235,9 +243,9 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
 
             answer_cell = ws.cell(row=row, column=COL_ANSWER, value="")
             apply_answer_style(answer_cell, style)
-            _add_data_validation(ws, answer_cell, q.answer)
+            _add_data_validation(ws, answer_cell, q.answer, translator)
 
-            comment_text = _build_comment_text(q)
+            comment_text = _build_comment_text(q, translator)
             comment_cell = ws.cell(row=row, column=COL_COMMENT, value=comment_text)
             apply_question_style(comment_cell, style, alternate)
             comment_cell.font = make_font(style.question_row, size_override=8)
@@ -249,24 +257,23 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
             row += 1
 
 
-def _build_comment_text(q) -> str:
+def _build_comment_text(q, translator: Translator) -> str:
     """Compose the Scale/Comment column text for a question."""
     if q.comment:
         return q.comment
     ans = q.answer
     if ans.type == AnswerType.SCALE and ans.min_value is not None:
-        hint = f"{ans.min_value}–{ans.max_value}"
         if ans.description:
-            return f"[{hint}]  {ans.description}"
-        return f"Scale: {hint}"
+            return f"[{ans.min_value}–{ans.max_value}]  {ans.description}"
+        return translator.t("hint_scale", min=ans.min_value, max=ans.max_value)
     if ans.type == AnswerType.YES_NO:
-        return ans.description or "Enter: Yes or No"
+        return ans.description or translator.t("hint_yesno")
     if ans.type == AnswerType.FREETEXT:
-        return ans.description or "Free text"
+        return ans.description or translator.t("hint_freetext")
     return ""
 
 
-def _add_data_validation(ws, cell, answer_config) -> None:
+def _add_data_validation(ws, cell, answer_config, translator: Translator) -> None:
     """Attach Excel data validation to an answer cell based on the answer type."""
     if answer_config.type == AnswerType.SCALE:
         if answer_config.min_value is not None and answer_config.max_value is not None:
@@ -276,22 +283,24 @@ def _add_data_validation(ws, cell, answer_config) -> None:
                 formula1=str(answer_config.min_value),
                 formula2=str(answer_config.max_value),
                 showErrorMessage=True,
-                errorTitle="Invalid value",
-                error=(
-                    f"Please enter a whole number between "
-                    f"{answer_config.min_value} and {answer_config.max_value}."
+                errorTitle=translator.t("dv_error_title"),
+                error=translator.t(
+                    "dv_scale_error",
+                    min=answer_config.min_value,
+                    max=answer_config.max_value,
                 ),
             )
             ws.add_data_validation(dv)
             dv.add(cell)
 
     elif answer_config.type == AnswerType.YES_NO:
+        yes_val, no_val = translator.yes_no_values()
         dv = DataValidation(
             type="list",
-            formula1='"Yes,No"',
+            formula1=translator.yes_no_formula(),
             showErrorMessage=True,
-            errorTitle="Invalid value",
-            error="Please select 'Yes' or 'No' from the dropdown.",
+            errorTitle=translator.t("dv_error_title"),
+            error=translator.t("dv_yesno_error", yes=yes_val, no=no_val),
         )
         ws.add_data_validation(dv)
         dv.add(cell)

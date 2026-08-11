@@ -55,6 +55,7 @@ from umfrage.styles import (
     make_font,
     make_thin_border,
 )
+from umfrage.translator import Translator
 from umfrage.validator import META_SHEET, ValidationResult, validate_response
 
 # Result files begin with this prefix so the collector can skip them on re-runs.
@@ -284,6 +285,7 @@ def _build_result_workbook(
     ws = wb.active
     ws.title = "Results"
 
+    translator = Translator(questionnaire.language)
     institution_field = _find_institution_field(questionnaire)
     institution_names = [
         vr.respondent_info.get(institution_field) or f"Respondent {i + 1}"
@@ -299,7 +301,10 @@ def _build_result_workbook(
 
     # ── Row 1: Title ──────────────────────────────────────────────────────────
     ws.row_dimensions[row].height = 28
-    title_cell = ws.cell(row=row, column=1, value=f"{questionnaire.title} — Results")
+    title_cell = ws.cell(
+        row=row, column=1,
+        value=f"{questionnaire.title} {translator.t('result_title_suffix')}",
+    )
     apply_result_header_style(title_cell, style)
     ws.merge_cells(start_row=row, start_column=1, end_row=row, end_column=total_cols)
     row += 1
@@ -308,8 +313,8 @@ def _build_result_workbook(
     ws.row_dimensions[row].height = 16
     org = questionnaire.organizer
     meta_text = (
-        f"Collected: {datetime.date.today().isoformat()}  |  "
-        f"Organizer: {org.name}, {org.institution}"
+        f"{translator.t('result_collected')}: {datetime.date.today().isoformat()}  |  "
+        f"{translator.t('result_organizer')}: {org.name}, {org.institution}"
     )
     meta_cell = ws.cell(row=row, column=1, value=meta_text)
     meta_cell.font = make_font(style.result_header, size_override=9)
@@ -324,7 +329,12 @@ def _build_result_workbook(
 
     # ── Row 4: Column headers ─────────────────────────────────────────────────
     ws.row_dimensions[row].height = 40
-    col_headers = ["Section", "Q-ID", "Question", "Scale / Comment"] + institution_names
+    col_headers = [
+        translator.t("result_col_section"),
+        translator.t("result_col_qid"),
+        translator.t("result_col_question"),
+        translator.t("result_col_scale_comment"),
+    ] + institution_names
     col_widths = [22, 10, 52, 30] + [22] * len(valid_results)
 
     for col_idx, (header, width) in enumerate(zip(col_headers, col_widths), start=1):

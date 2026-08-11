@@ -28,6 +28,15 @@ title: "Annual Cooperation Survey 2024"
 # so the collector can detect mismatches.
 version: "1.0"
 
+# Language for all static UI labels in the generated Excel file.
+# Controls column headers (ID, Question, Answer, Scale / Comment),
+# section labels, yes/no dropdown values, and result-sheet headers.
+# Available built-in codes: "en" (English), "de" (German).
+# Add umfrage/i18n/<code>.yaml to register additional languages.
+# Default: "en"
+language: "en"
+# language: "de"    # Uncomment for a German questionnaire
+
 # ── Organizer information ─────────────────────────────────────────────────────
 
 # Information about the person or organisation running the survey.

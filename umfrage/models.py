@@ -90,6 +90,15 @@ class Questionnaire(BaseModel):
 
     title: str
     version: str = "1.0"
+    language: str = Field(
+        default="en",
+        description=(
+            "Language code for UI labels in the generated Excel file. "
+            "Must match a file in umfrage/i18n/ (e.g. 'en', 'de'). "
+            "Run 'umfrage validate' to check availability. "
+            "Add a YAML file to umfrage/i18n/ to register a new language."
+        ),
+    )
     organizer: OrganizerInfo
     respondent_fields: list[RespondentField] = Field(min_length=1)
     sections: list[Section] = Field(min_length=1)

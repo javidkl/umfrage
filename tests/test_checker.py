@@ -254,3 +254,30 @@ class TestRespondentFields:
         result = check_questionnaire(q)
         assert not result.is_valid
         assert any("respondent_fields" in e for e in result.errors)
+
+
+class TestLanguageCheck:
+    def test_unknown_language_gives_error(self) -> None:
+        q = _base_questionnaire()
+        q.language = "fr"
+        result = check_questionnaire(q)
+        assert not result.is_valid
+        assert any(
+            "fr" in e and ("language" in e.lower() or "Language" in e)
+            for e in result.errors
+        )
+
+    def test_english_language_passes(self) -> None:
+        q = _base_questionnaire()
+        q.language = "en"
+        assert check_questionnaire(q).is_valid
+
+    def test_german_language_passes(self) -> None:
+        q = _base_questionnaire()
+        q.language = "de"
+        assert check_questionnaire(q).is_valid
+
+    def test_default_language_is_english_and_passes(self) -> None:
+        q = _base_questionnaire()
+        assert q.language == "en"
+        assert check_questionnaire(q).is_valid

@@ -26,6 +26,7 @@ from typing import Any
 from openpyxl import load_workbook
 
 from umfrage.models import AnswerType, Questionnaire
+from umfrage.translator import Translator
 
 # Sheet name constants — must match generator.py
 QUESTIONNAIRE_SHEET = "Questionnaire"
@@ -121,6 +122,9 @@ def validate_response(path: Path, questionnaire: Questionnaire) -> ValidationRes
     # Read all sheet rows once for efficiency
     all_rows = list(ws_q.iter_rows(values_only=True))
 
+    # Build a translator for language-aware yes/no validation
+    translator = Translator(questionnaire.language)
+
     # Extract respondent info and answers from the sheet content
     _extract_respondent_info(all_rows, questionnaire, result)
     _extract_answers(all_rows, questionnaire, result)
@@ -149,7 +153,7 @@ def validate_response(path: Path, questionnaire: Questionnaire) -> ValidationRes
                 result.is_valid = False
         else:
             # Check 6 — answer value within constraints
-            error = _validate_answer_value(q.id, raw_value, q.answer)
+            error = _validate_answer_value(q.id, raw_value, q.answer, translator)
             if error:
                 result.errors.append(error)
                 result.is_valid = False
@@ -207,10 +211,12 @@ def _extract_answers(
             result.answers[qid] = answer_value
 
 
-def _validate_answer_value(qid: str, value: Any, answer_config) -> str | None:
+def _validate_answer_value(qid: str, value: Any, answer_config, translator: Translator) -> str | None:
     """Validate a single answer value against its answer config.
 
     Returns an error message string, or ``None`` if the value is valid.
+    Yes/No answers are validated against the language-specific strings
+    provided by *translator* (case-insensitive).
     """
     if answer_config.type == AnswerType.SCALE:
         try:
@@ -229,9 +235,11 @@ def _validate_answer_value(qid: str, value: Any, answer_config) -> str | None:
             )
 
     elif answer_config.type == AnswerType.YES_NO:
-        if str(value).strip().lower() not in ("yes", "no"):
+        yes_val, no_val = translator.yes_no_values()
+        if str(value).strip().lower() not in (yes_val.lower(), no_val.lower()):
             return (
-                f"Question '{qid}': expected 'Yes' or 'No', got '{value}'."
+                f"Question '{qid}': expected '{yes_val}' or '{no_val}', "
+                f"got '{value}'."
             )
 
     # FREETEXT: any non-empty string is valid (emptiness is checked by the caller)

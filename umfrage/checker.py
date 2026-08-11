@@ -12,6 +12,7 @@ import re
 from dataclasses import dataclass, field
 
 from umfrage.models import AnswerType, Questionnaire
+from umfrage.translator import list_languages
 
 # Question IDs must start and end with an alphanumeric character and may
 # contain alphanumerics, dots, hyphens, and underscores in between.
@@ -75,6 +76,16 @@ def check_questionnaire(q: Questionnaire) -> CheckResult:
         result.add_error(
             f"Organizer email '{q.organizer.email}' does not look like a valid "
             "email address."
+        )
+
+    # Check 10 — language availability
+    available_languages = list_languages()
+    if q.language not in available_languages:
+        result.add_error(
+            f"Language '{q.language}' is not available. "
+            f"Available languages: {', '.join(available_languages)}. "
+            "To add a new language, create umfrage/i18n/<code>.yaml with all "
+            "required keys (copy umfrage/i18n/en.yaml as a template)."
         )
 
     # Check 1 — at least one section (Pydantic enforces min_length=1)

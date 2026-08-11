@@ -1,0 +1,49 @@
+# umfrage — Deutsche UI-Texte (German UI strings)
+# ──────────────────────────────────────────────────────────────────────────────
+# Diese Datei definiert alle übersetzbaren UI-Labels für die generierten
+# Excel-Dateien in deutscher Sprache.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Abschnitt Angaben zur antwortenden Institution ───────────────────────────
+label_respondent_information: "ANGABEN ZUR ANTWORTENDEN INSTITUTION"
+label_organizer: "Verantwortlich"
+label_institution: "Institution"
+label_email: "E-Mail"
+label_phone: "Telefon"
+
+# ── Spaltenüberschriften im Fragebogen-Tabellenblatt ─────────────────────────
+col_id: "ID"
+col_question: "Frage"
+col_answer: "Antwort"
+col_scale_comment: "Skala / Kommentar"
+
+# ── Hinweistexte in der Spalte „Skala / Kommentar" ───────────────────────────
+# {min} und {max} werden durch die konfigurierten Skalengrenzen ersetzt.
+hint_scale: "Skala: {min}–{max}"
+hint_yesno: "Bitte auswählen: Ja oder Nein"
+hint_freetext: "Freitext"
+
+# ── Ja / Nein ─────────────────────────────────────────────────────────────────
+# Diese Werte werden sowohl als Excel-Dropdown-Optionen als auch bei der
+# Validierung eingegebener Antworten verwendet (Groß-/Kleinschreibung wird
+# nicht beachtet).
+# Schlüssel werden in Anführungszeichen gesetzt, damit PyYAML 'yes'/'no' nicht
+# als boolesche Werte interpretiert.
+"yes": "Ja"
+"no": "Nein"
+
+# ── Fehlermeldungen der Excel-Dateneingabeprüfung ────────────────────────────
+# {min} und {max} werden durch Skalengrenzen ersetzt; {yes} und {no} durch
+# die übersetzten Ja/Nein-Werte.
+dv_error_title: "Ungültiger Wert"
+dv_scale_error: "Bitte geben Sie eine ganze Zahl zwischen {min} und {max} ein."
+dv_yesno_error: "Bitte wählen Sie '{yes}' oder '{no}' aus der Auswahlliste."
+
+# ── Labels im Ergebnis-Tabellenblatt ─────────────────────────────────────────
+result_title_suffix: "— Ergebnisse"
+result_collected: "Erfasst am"
+result_organizer: "Verantwortlich"
+result_col_section: "Abschnitt"
+result_col_qid: "F-Nr."
+result_col_question: "Frage"
+result_col_scale_comment: "Skala / Kommentar"

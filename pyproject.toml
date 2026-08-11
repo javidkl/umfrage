@@ -30,6 +30,9 @@ umfrage = "umfrage.cli:main"
 where = ["."]
 include = ["umfrage*"]
 
+[tool.setuptools.package-data]
+umfrage = ["i18n/*.yaml"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v"

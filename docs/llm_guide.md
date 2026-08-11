@@ -38,6 +38,7 @@ and inline validation in VS Code (requires the YAML extension):
 |--------------------|------------------|----------|---------|-------|
 | `title`            | string           | ✅       | —       | Shown as the large header in the Excel file. Also used as the file-name slug. |
 | `version`          | string           | ❌       | `"1.0"` | Increment when changing questions after distribution. |
+| `language`         | string           | ❌       | `"en"`  | Language code for all static UI labels (see §3.7). |
 | `organizer`        | object           | ✅       | —       | See §3.2 |
 | `respondent_fields`| array of objects | ✅       | —       | At least one required. See §3.3 |
 | `sections`         | array of objects | ✅       | —       | At least one required. See §3.4 |
@@ -139,6 +140,31 @@ IDs must be **globally unique** within a questionnaire and **slug-safe**:
 | `S{n}.Q{n}`  | `S1.Q1`       | Simple numbered sections |
 | `section.q{n}` | `general.q01` | Named sections |
 | `{topic}-{n}` | `tech-1`      | Thematic grouping |
+
+---
+
+### 3.7 `language` — UI Language
+
+Controls the language of **all static labels** in the generated Excel file:
+column headers (`ID`, `Question`, `Answer`, `Scale / Comment`), section labels
+(`RESPONDENT INFORMATION`), dropdown options (`Yes`/`No` ↔ `Ja`/`Nein`), and
+result-sheet headers.
+
+```yaml
+language: "de"   # optional; default: "en"
+```
+
+| Code | Language | Yes / No |
+|------|----------|----------|
+| `en` | English  | Yes / No |
+| `de` | German   | Ja / Nein |
+
+**Adding a new language:** copy `umfrage/i18n/en.yaml` to
+`umfrage/i18n/<code>.yaml` and translate every value. The new code becomes
+immediately available — no Python changes required.
+
+**Validation:** `umfrage validate` checks that the specified language code
+exists. An unknown code blocks Excel generation.
 
 ---
 
@@ -320,7 +346,11 @@ Follow these rules strictly when generating or editing questionnaire YAML files:
 7. **Use `required: false`** on open-ended or follow-up questions that are
    genuinely optional so respondents are not penalized for skipping them.
 
-8. **Validate before generating.** Always run `umfrage validate <file.yaml>`
+9. **Use `language: "de"`** (or another available code) when the questionnaire
+   is intended for German-speaking respondents. This translates all static
+   labels, column headers, and the yes/no dropdown values (`Ja`/`Nein`).
+
+10. **Validate before generating.** Always run `umfrage validate <file.yaml>`
    after generating a config to catch any issues before distributing.
 
 ---

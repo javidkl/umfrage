@@ -17,6 +17,12 @@
       "default": "1.0",
       "description": "Version string for the questionnaire. Increment when making changes that would invalidate existing responses."
     },
+    "language": {
+      "type": "string",
+      "default": "en",
+      "description": "Language code for all static UI labels in the generated Excel file (column headers, yes/no dropdown values, hints, etc.). Must match a YAML file in umfrage/i18n/. Built-in codes: 'en' (English), 'de' (German). Add umfrage/i18n/<code>.yaml to register a new language.",
+      "examples": ["en", "de"]
+    },
     "organizer": {
       "type": "object",
       "description": "Information about the person or institution conducting the questionnaire.",

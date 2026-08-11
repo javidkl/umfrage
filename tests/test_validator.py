@@ -230,3 +230,56 @@ class TestRespondentFieldValidation:
         result = validate_response(generated_xlsx, sample_questionnaire)
         assert not result.is_valid
         assert any("Name" in e for e in result.errors)
+
+
+class TestI18nValidation:
+    """Verify that yes/no validation uses language-specific strings."""
+
+    def _make_german_xlsx(self, tmp_path, sample_questionnaire, sample_style):
+        from umfrage.generator import generate_questionnaire
+        q = sample_questionnaire.model_copy(update={"language": "de"})
+        out = tmp_path / "de_questionnaire.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        return out, q
+
+    def test_german_ja_is_accepted(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        out, q = self._make_german_xlsx(tmp_path, sample_questionnaire, sample_style)
+        _fill_xlsx(out, FULL_RESPONDENT, {**FULL_ANSWERS, "G.Q2": "Ja"})
+        result = validate_response(out, q)
+        assert result.is_valid, result.errors
+
+    def test_german_nein_is_accepted(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        out, q = self._make_german_xlsx(tmp_path, sample_questionnaire, sample_style)
+        _fill_xlsx(out, FULL_RESPONDENT, {**FULL_ANSWERS, "G.Q2": "Nein"})
+        result = validate_response(out, q)
+        assert result.is_valid, result.errors
+
+    @pytest.mark.parametrize("german_val", ["ja", "JA", "Ja", "nein", "NEIN", "Nein"])
+    def test_german_yesno_case_insensitive(
+        self, tmp_path: Path, sample_questionnaire, sample_style, german_val: str
+    ) -> None:
+        out, q = self._make_german_xlsx(tmp_path, sample_questionnaire, sample_style)
+        _fill_xlsx(out, FULL_RESPONDENT, {**FULL_ANSWERS, "G.Q2": german_val})
+        result = validate_response(out, q)
+        assert result.is_valid, f"'{german_val}' should be valid for German YES_NO"
+
+    def test_german_questionnaire_rejects_english_yes(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        out, q = self._make_german_xlsx(tmp_path, sample_questionnaire, sample_style)
+        _fill_xlsx(out, FULL_RESPONDENT, {**FULL_ANSWERS, "G.Q2": "Yes"})
+        result = validate_response(out, q)
+        assert not result.is_valid
+        assert any("G.Q2" in e for e in result.errors)
+
+    def test_german_questionnaire_rejects_english_no(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        out, q = self._make_german_xlsx(tmp_path, sample_questionnaire, sample_style)
+        _fill_xlsx(out, FULL_RESPONDENT, {**FULL_ANSWERS, "G.Q2": "No"})
+        result = validate_response(out, q)
+        assert not result.is_valid

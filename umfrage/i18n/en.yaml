@@ -1,0 +1,48 @@
+# umfrage — English UI strings
+# ──────────────────────────────────────────────────────────────────────────────
+# This file defines all translatable UI labels used in generated Excel files.
+# To add a new language, copy this file to <language-code>.yaml and translate
+# every value. Do NOT add or remove keys — all keys must be present.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# ── Respondent information section ───────────────────────────────────────────
+label_respondent_information: "RESPONDENT INFORMATION"
+label_organizer: "Organizer"
+label_institution: "Institution"
+label_email: "Email"
+label_phone: "Phone"
+
+# ── Questionnaire sheet column headers ───────────────────────────────────────
+col_id: "ID"
+col_question: "Question"
+col_answer: "Answer"
+col_scale_comment: "Scale / Comment"
+
+# ── Answer-cell hint text (shown in Scale / Comment column) ──────────────────
+# {min} and {max} are replaced with the configured scale bounds.
+hint_scale: "Scale: {min}–{max}"
+hint_yesno: "Enter: Yes or No"
+hint_freetext: "Free text"
+
+# ── Yes / No values ───────────────────────────────────────────────────────────
+# These strings are used both as the Excel dropdown options and as the accepted
+# answers during validation (case-insensitive comparison is applied).
+# Keys are quoted to prevent PyYAML from interpreting 'yes'/'no' as booleans.
+"yes": "Yes"
+"no": "No"
+
+# ── Excel data-validation error messages ─────────────────────────────────────
+# {min} and {max} are replaced with scale bounds; {yes} and {no} with the
+# translated yes/no values above.
+dv_error_title: "Invalid value"
+dv_scale_error: "Please enter a whole number between {min} and {max}."
+dv_yesno_error: "Please select '{yes}' or '{no}' from the dropdown."
+
+# ── Result workbook labels ────────────────────────────────────────────────────
+result_title_suffix: "— Results"
+result_collected: "Collected"
+result_organizer: "Organizer"
+result_col_section: "Section"
+result_col_qid: "Q-ID"
+result_col_question: "Question"
+result_col_scale_comment: "Scale / Comment"

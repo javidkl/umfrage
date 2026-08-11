@@ -121,6 +121,19 @@ class TestLoadQuestionnaire:
         q = load_questionnaire(config)
         assert q.sections[0].questions[0].required is True
 
+    def test_language_field_accepted(self, tmp_path: Path) -> None:
+        yaml_with_lang = VALID_QUESTIONNAIRE_YAML + "language: \"de\"\n"
+        config = tmp_path / "q.yaml"
+        config.write_text(yaml_with_lang)
+        q = load_questionnaire(config)
+        assert q.language == "de"
+
+    def test_language_defaults_to_english(self, tmp_path: Path) -> None:
+        config = tmp_path / "q.yaml"
+        config.write_text(VALID_QUESTIONNAIRE_YAML)
+        q = load_questionnaire(config)
+        assert q.language == "en"
+
 
 class TestLoadStyle:
     def test_valid_style_yaml(self, tmp_path: Path) -> None:

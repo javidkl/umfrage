@@ -217,3 +217,71 @@ class TestWriteMetadataFile:
         meta_path = tmp_path / "nested" / "dir" / "q_metadata.yaml"
         write_metadata_file(sample_questionnaire, meta_path)
         assert meta_path.exists()
+
+
+class TestI18nGeneration:
+    """Verify that language settings propagate correctly into the Excel file."""
+
+    def _make_german(self, sample_questionnaire):
+        return sample_questionnaire.model_copy(update={"language": "de"})
+
+    def test_german_yesno_dropdown_uses_ja_nein(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        q = self._make_german(sample_questionnaire)
+        out = tmp_path / "de.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out)
+        ws = wb["Questionnaire"]
+        list_dvs = [
+            dv for dv in ws.data_validations.dataValidation if dv.type == "list"
+        ]
+        formulas = [dv.formula1 for dv in list_dvs]
+        assert any("Ja" in f for f in formulas), (
+            f"Expected 'Ja' in a list-validation formula, got: {formulas}"
+        )
+        assert not any("Yes" in f for f in formulas), (
+            "English 'Yes' should not appear in a German questionnaire dropdown"
+        )
+
+    def test_german_column_headers_in_sheet(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        q = self._make_german(sample_questionnaire)
+        out = tmp_path / "de.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out, data_only=True)
+        ws = wb["Questionnaire"]
+        all_values = {
+            ws.cell(row=r, column=c).value
+            for r in range(1, ws.max_row + 1)
+            for c in range(1, 5)
+        }
+        assert "Frage" in all_values, "German 'Frage' not found in column values"
+        assert "Antwort" in all_values, "German 'Antwort' not found in column values"
+
+    def test_german_respondent_header_translated(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        q = self._make_german(sample_questionnaire)
+        out = tmp_path / "de.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out, data_only=True)
+        ws = wb["Questionnaire"]
+        col_a = [ws.cell(row=r, column=1).value for r in range(1, ws.max_row + 1)]
+        assert any("ANGABEN" in str(v) for v in col_a if v), (
+            "German respondent-information header not found"
+        )
+
+    def test_english_questionnaire_uses_yes_no(
+        self, generated_xlsx: Path
+    ) -> None:
+        wb = load_workbook(generated_xlsx)
+        ws = wb["Questionnaire"]
+        list_dvs = [
+            dv for dv in ws.data_validations.dataValidation if dv.type == "list"
+        ]
+        formulas = [dv.formula1 for dv in list_dvs]
+        assert any("Yes" in f for f in formulas), (
+            "English 'Yes' not found in list-validation formula"
+        )
