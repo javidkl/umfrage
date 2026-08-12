@@ -45,6 +45,10 @@ Thumbs.db
 venv/
 env/
 
+# ── Local files ───────────────
+test/
+dtn/
+
 # ── Actual questionnaire configs containing real institution data ──────────────
 # Track: config/questionnaire_sample.yaml  (annotated template, safe to commit)
 # Track: config/style.yaml                 (shared appearance config)

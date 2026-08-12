@@ -116,7 +116,8 @@
 
    END OF TERMS AND CONDITIONS
 
-   Copyright 2024 umfrage contributors
+   Copyright 2024 David Kleinhans, Jade University of Applied Sciences,
+   Oldenburg, Germany
 
    Licensed under the Apache License, Version 2.0 (the "License");
    you may not use this file except in compliance with the License.
@@ -129,3 +130,23 @@
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
    limitations under the License.
+
+   -----------------------------------------------------------------------
+   Third-Party Dependencies
+   -----------------------------------------------------------------------
+   This software includes packages installed from the Python Package Index
+   (PyPI) and other sources. Each such package is distributed under its own
+   license. The applicable license texts are bundled with the respective
+   distributions and can be inspected with:
+
+       pip show <package-name>
+
+   Key runtime dependencies and their licenses (informational, not exhaustive):
+     openpyxl   -- MIT License
+     pydantic   -- MIT License
+     PyYAML     -- MIT License
+     click      -- BSD License
+
+   Compliance with the licenses of all dependencies remains the
+   responsibility of the user.
+   -----------------------------------------------------------------------

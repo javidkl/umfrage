@@ -6,6 +6,7 @@ files and compiled into protected `.xlsx` files that can be emailed to
 respondents. Returned files are validated and aggregated into a single result
 spreadsheet.
 
+Copyright 2024 David Kleinhans, Jade University of Applied Sciences, Oldenburg.
 Licensed under the [Apache License 2.0](LICENSE).
 
 ---
@@ -23,7 +24,12 @@ Licensed under the [Apache License 2.0](LICENSE).
   same response folder; one result file is produced per questionnaire
 - **LLM authoring guide**: `docs/llm_guide.md` and `docs/questionnaire.schema.json`
   enable AI-assisted questionnaire authoring with IDE validation
-- **Full test suite**: 115 unit tests via pytest
+- **Timestamped output files**: every `generate` run produces a new file
+  (`{slug}_questionnaire_{YYYYMMDD_HHMMSS}.xlsx`) so old versions are never overwritten
+- **Interactive invalid-file handling**: `collect` prompts per-file when validation
+  fails; user can include (filling missing answers with a configurable marker),
+  skip, or bulk-decide with *All* / *None*
+- **Full test suite**: 171 unit tests via pytest
 
 ---
 
@@ -80,14 +86,18 @@ umfrage validate config/questionnaire.yaml
 ### 3. Generate the Excel file
 
 ```bash
-umfrage generate config/questionnaire.yaml --metadata-file
-# [OK] Questionnaire generated: ./annual-cooperation-survey-2024_questionnaire.xlsx
-# [OK] Metadata file written:   ./annual-cooperation-survey-2024_metadata.yaml
+umfrage generate config/questionnaire.yaml
+# [OK] Questionnaire generated: ./annual-cooperation-survey-2024_questionnaire_20260812_143000.xlsx
+# [OK] Metadata file written:   ./annual-cooperation-survey-2024_metadata_20260812_143000.yaml
 ```
 
-The `--metadata-file` flag writes a `*_metadata.yaml` companion that embeds
-the full questionnaire model, so `umfrage collect` can run without the
-original `questionnaire.yaml`.
+Output filenames include a `YYYYMMDD_HHMMSS` timestamp so that re-generating
+the questionnaire (e.g. after a config tweak) never overwrites an existing file.
+
+By default a `*_metadata_{timestamp}.yaml` companion is also written.  Pass
+`--no-metadata-file` to suppress it.  The metadata file embeds the full
+questionnaire model so `umfrage collect` can run without the original
+`questionnaire.yaml`.
 
 Specify an output directory with `--output-dir`:
 
@@ -97,18 +107,33 @@ umfrage generate config/questionnaire.yaml --output-dir out/ --metadata-file
 
 ### 4. Distribute
 
-Send `*_questionnaire.xlsx` to each institution. Keep the `*_metadata.yaml`
+Send `*_questionnaire_*.xlsx` to each institution. Keep the `*_metadata_*.yaml`
 in your responses folder.
 
 ### 5. Collect and aggregate
 
 Place all returned `.xlsx` files in a single folder (together with the
-`*_metadata.yaml`), then run:
+`*_metadata_*.yaml`), then run:
 
 ```bash
 umfrage collect responses/
-# [OK] 'Annual Cooperation Survey 2024': 5/5 valid → responses/results_annual-...xlsx
+# [WARN] 'org_x.xlsx' failed validation:
+#   • Required question 'S1.Q3' has no answer.
+#   Include? [I]nclude / [S]kip / include [A]ll / skip [N]one [I]:
+# [OK] 'Annual Cooperation Survey 2024': 5/5 included → responses/results_annual-...xlsx
 ```
+
+For each file that fails validation you are asked what to do:
+
+| Input | Effect |
+|---|---|
+| `I` or Enter (default) | Include the file; missing answers are filled with `XXXXX` (configurable) and highlighted |
+| `S` | Skip the file |
+| `A` | Include this and all remaining invalid files |
+| `N` | Skip this and all remaining invalid files |
+
+Pass `--skip-invalid` to suppress prompting and always skip invalid files
+(useful for CI/CD pipelines).
 
 The result file has:
 - Row 1: questionnaire title
@@ -116,6 +141,7 @@ The result file has:
 - Row 4: column headers (Section | Q-ID | Question | Scale/Comment | Institution A | …)
 - Subsequent rows: one per question; institution answers as columns
 - Missing required answers are highlighted in the configured warning color
+- Force-included missing answers show the `missing_answer_marker` (default `XXXXX`) also highlighted
 
 ---
 
@@ -141,7 +167,10 @@ Generate a protected Excel questionnaire from a YAML config.
 |---|---|
 | `--output-dir DIR` | Output directory (default: current directory) |
 | `--style STYLE` | Path to `style.yaml` |
-| `--metadata-file` | Write a `*_metadata.yaml` companion file |
+| `--no-metadata-file` | Skip writing the companion `*_metadata_*.yaml` file |
+
+Output files always include a `YYYYMMDD_HHMMSS` timestamp in their names so
+re-running `generate` never overwrites a previous result.
 
 ---
 
@@ -151,9 +180,14 @@ Collect and aggregate returned files into result spreadsheets.
 
 | Option | Description |
 |---|---|
-| `--config CONFIG` | Path to questionnaire YAML (optional if `*_metadata.yaml` present) |
+| `--config CONFIG` | Path to questionnaire YAML (optional if `*_metadata_*.yaml` present) |
 | `--style STYLE` | Path to `style.yaml` |
 | `--output-dir DIR` | Output directory (default: same as `RESPONSES_DIR`) |
+| `--skip-invalid` | Silently skip invalid files instead of prompting (CI-friendly) |
+
+When a response file fails validation the tool pauses and asks whether to
+include or skip it.  Missing answers in force-included files are replaced by
+the `missing_answer_marker` (default `XXXXX`) and highlighted.
 
 Multiple questionnaires in one folder are handled automatically — one
 `results_*.xlsx` is produced per questionnaire group found.
@@ -181,9 +215,13 @@ organizer:
 
 respondent_fields:
   - label: "Name"
-  - label: "Institution"
+  - label: "Institution"     # used as column header in the result spreadsheet
   - label: "Email"
     required: false             # default: true
+
+# TIP: include a field whose label contains "institution" or "organization".
+# The collector uses it as the per-respondent column header in the result
+# spreadsheet.  If no such field exists it falls back to the first field.
 
 sections:
   - title: "Section Name"
@@ -226,7 +264,8 @@ Key settings:
 | `answer_cell` | Answer cell styling (always white/unlocked) |
 | `respondent_header` | "RESPONDENT INFORMATION" label row |
 | `result_header` | Column headers in the result spreadsheet |
-| `warning_color` | Background for missing required answers in results |
+| `warning_color` | Background for missing/invalid required answer cells in results |
+| `missing_answer_marker` | Text placed in missing-answer cells of force-included files (default: `XXXXX`) |
 | `column_widths` | Character widths for ID, text, answer, comment columns |
 | `protection_password` | Optional worksheet password (null = no password) |
 
@@ -253,7 +292,7 @@ umfrage/
 ├── docs/
 │   ├── llm_guide.md               AI/LLM authoring guide
 │   └── questionnaire.schema.json  JSON Schema for IDE validation
-├── tests/                         pytest test suite (163 tests)
+├── tests/                         pytest test suite (171 tests)
 ├── pyproject.toml
 ├── LICENSE                        Apache 2.0
 └── CHANGELOG.md

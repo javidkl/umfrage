@@ -40,7 +40,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import yaml
 from openpyxl import Workbook, load_workbook
@@ -73,6 +73,8 @@ class CollectionSummary:
     valid_count: int
     skipped_count: int
     skipped_files: list[tuple[Path, list[str]]] = field(default_factory=list)
+    force_included_count: int = 0
+    force_included_files: list[tuple[Path, list[str]]] = field(default_factory=list)
     output_path: Path | None = None
 
 
@@ -81,6 +83,7 @@ def collect_all(
     style: StyleConfig,
     output_dir: Path,
     config_override: Questionnaire | None = None,
+    on_invalid: Callable[[Path, list[str]], str] | None = None,
 ) -> list[CollectionSummary]:
     """Process all response files in *folder*, grouped by questionnaire identity.
 
@@ -99,12 +102,37 @@ def collect_all(
         output_dir: Directory where result files are written.
         config_override: If supplied, this questionnaire is used for **all**
             groups instead of auto-discovering from metadata files.
+        on_invalid: Optional callback invoked for each file that fails
+            validation.  Receives the file path and list of error strings;
+            must return ``"include"`` to force-include the file (missing
+            answers filled with :attr:`~umfrage.models.StyleConfig.missing_answer_marker`)
+            or ``"skip"`` to discard it silently.  When *None* (default) all
+            invalid files are skipped without prompting.
 
     Returns:
         A :class:`CollectionSummary` per questionnaire group found.
     """
     groups = discover_questionnaire_groups(folder)
     summaries: list[CollectionSummary] = []
+
+    # Wrap the caller's callback so "all"/"none" decisions persist across groups.
+    effective_on_invalid: Callable[[Path, list[str]], str] | None = None
+    if on_invalid is not None:
+        _forced: list[str | None] = [None]
+
+        def _wrap(path: Path, errors: list[str]) -> str:
+            if _forced[0] is not None:
+                return _forced[0]
+            raw = on_invalid(path, errors)
+            if raw == "all":
+                _forced[0] = "include"
+                return "include"
+            if raw == "none":
+                _forced[0] = "skip"
+                return "skip"
+            return raw  # "include" or "skip"
+
+        effective_on_invalid = _wrap
 
     for config_hash, response_paths in groups.items():
         try:
@@ -122,7 +150,7 @@ def collect_all(
         result_path = output_dir / result_filename
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        summary = collect_group(response_paths, questionnaire, style, result_path)
+        summary = collect_group(response_paths, questionnaire, style, result_path, on_invalid=effective_on_invalid)
         summaries.append(summary)
 
     return summaries
@@ -204,6 +232,7 @@ def collect_group(
     questionnaire: Questionnaire,
     style: StyleConfig,
     output_path: Path,
+    on_invalid: Callable[[Path, list[str]], str] | None = None,
 ) -> CollectionSummary:
     """Validate and aggregate one group of response files into a result workbook.
 
@@ -212,6 +241,12 @@ def collect_group(
         questionnaire: The questionnaire config for this group.
         style: Excel appearance configuration.
         output_path: Destination for the aggregated result ``.xlsx``.
+        on_invalid: Optional callback invoked for each file that fails
+            validation.  Receives the file path and list of error strings;
+            must return ``"include"`` to force-include the file (missing
+            answers filled with :attr:`~umfrage.models.StyleConfig.missing_answer_marker`)
+            or ``"skip"`` to discard it.  When *None* all invalid files are
+            skipped silently (legacy behaviour).
 
     Returns:
         A :class:`CollectionSummary` for this group.
@@ -233,12 +268,26 @@ def collect_group(
             valid_results.append(vr)
             summary.valid_count += 1
         else:
-            summary.skipped_count += 1
-            summary.skipped_files.append((path, vr.errors))
-            print(
-                f"[WARNING] Skipping '{path.name}': "
-                + "; ".join(vr.errors)
-            )
+            decision = "skip"
+            if on_invalid is not None:
+                decision = on_invalid(path, vr.errors)
+
+            if decision == "include":
+                _apply_missing_marker(vr, questionnaire, style.missing_answer_marker)
+                valid_results.append(vr)
+                summary.force_included_count += 1
+                summary.force_included_files.append((path, vr.errors))
+                print(
+                    f"[INFO] Force-including '{path.name}' despite errors: "
+                    + "; ".join(vr.errors)
+                )
+            else:
+                summary.skipped_count += 1
+                summary.skipped_files.append((path, vr.errors))
+                print(
+                    f"[WARNING] Skipping '{path.name}': "
+                    + "; ".join(vr.errors)
+                )
 
     if valid_results:
         _build_result_workbook(valid_results, questionnaire, style, output_path)
@@ -247,6 +296,23 @@ def collect_group(
 
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
+
+def _apply_missing_marker(
+    vr: ValidationResult,
+    questionnaire: Questionnaire,
+    marker: str,
+) -> None:
+    """Fill any empty question answer in *vr* with *marker*.
+
+    Called when a file is force-included despite validation errors so that
+    missing cells in the result workbook are visually flagged rather than
+    left blank.
+    """
+    for q in questionnaire.all_questions():
+        val = vr.answers.get(q.id)
+        if val is None or str(val).strip() == "":
+            vr.answers[q.id] = marker
+
 
 def _read_config_hash(xlsx_path: Path) -> str | None:
     """Safely read the ``config_hash`` value from a response file's ``_meta`` sheet."""
@@ -433,9 +499,13 @@ def _build_result_workbook(
                 cell = ws.cell(row=row, column=col_idx, value=answer_value)
                 cell.alignment = Alignment(horizontal="center", vertical="center")
                 cell.border = border
-                # Highlight missing required answers in warning colour
+                # Highlight cells that are empty (required) OR carry the missing-answer marker
                 is_empty = answer_value is None or str(answer_value).strip() == ""
-                cell.fill = warning_fill if (is_empty and q.required) else make_fill("FFFFFF")
+                is_marked = (
+                    answer_value is not None
+                    and str(answer_value) == style.missing_answer_marker
+                )
+                cell.fill = warning_fill if (is_empty and q.required) or is_marked else make_fill("FFFFFF")
 
             question_idx += 1
             row += 1

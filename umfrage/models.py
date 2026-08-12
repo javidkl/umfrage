@@ -186,6 +186,13 @@ class StyleConfig(BaseModel):
         default="FFCCCC",
         description="Background hex color for missing/invalid answer cells in the result file.",
     )
+    missing_answer_marker: str = Field(
+        default="XXXXX",
+        description=(
+            "Placeholder text written into result cells for missing answers when a "
+            "file that failed validation is force-included during collection."
+        ),
+    )
     column_widths: ColumnWidths = Field(default_factory=ColumnWidths)
     protection_password: str | None = Field(
         default=None,

@@ -421,3 +421,243 @@ class TestSourceFileRow:
         assert "Quelldatei" in label, (
             f"Expected 'Quelldatei' for German label, got: '{label}'"
         )
+
+
+# ── on_invalid callback / force-include behaviour ─────────────────────────────
+
+class TestForceInclude:
+    """Tests for the on_invalid callback and force-inclusion of invalid files."""
+
+    def _make_invalid_response(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        sample_style,
+        *,
+        omit_answer: str = "G.Q1",
+    ) -> Path:
+        """Return a response file with one required answer left blank."""
+        base = tmp_path / "base.xlsx"
+        generate_questionnaire(sample_questionnaire, sample_style, base)
+        resp = tmp_path / "invalid_resp.xlsx"
+        shutil.copy(base, resp)
+        # Fill all answers except the one to omit
+        partial = {k: v for k, v in SAMPLE_ANSWERS.items() if k != omit_answer}
+        _fill_response(resp, "Eve", "Org X", partial)
+        return resp
+
+    def test_no_callback_skips_invalid(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        """Without on_invalid callback, invalid files are silently skipped (legacy)."""
+        folder = tmp_path / "r"
+        folder.mkdir()
+        write_metadata_file(
+            sample_questionnaire,
+            folder / f"{sample_questionnaire.questionnaire_id()}_metadata.yaml",
+        )
+        resp = self._make_invalid_response(tmp_path, sample_questionnaire, sample_style)
+        shutil.copy(resp, folder / "resp.xlsx")
+
+        out_dir = tmp_path / "out"
+        summaries = collect_all(folder, sample_style, out_dir, on_invalid=None)
+        s = summaries[0]
+        assert s.skipped_count == 1
+        assert s.force_included_count == 0
+        assert s.valid_count == 0
+
+    def test_include_callback_force_includes(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        """Callback returning 'include' causes the file to be force-included."""
+        folder = tmp_path / "r"
+        folder.mkdir()
+        write_metadata_file(
+            sample_questionnaire,
+            folder / f"{sample_questionnaire.questionnaire_id()}_metadata.yaml",
+        )
+        resp = self._make_invalid_response(tmp_path, sample_questionnaire, sample_style)
+        shutil.copy(resp, folder / "resp.xlsx")
+
+        out_dir = tmp_path / "out"
+        summaries = collect_all(
+            folder, sample_style, out_dir, on_invalid=lambda p, e: "include"
+        )
+        s = summaries[0]
+        assert s.force_included_count == 1
+        assert s.skipped_count == 0
+        assert len(s.force_included_files) == 1
+        assert s.output_path is not None and s.output_path.exists()
+
+    def test_skip_callback_skips_file(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        """Callback returning 'skip' discards the file (same as legacy)."""
+        folder = tmp_path / "r"
+        folder.mkdir()
+        write_metadata_file(
+            sample_questionnaire,
+            folder / f"{sample_questionnaire.questionnaire_id()}_metadata.yaml",
+        )
+        resp = self._make_invalid_response(tmp_path, sample_questionnaire, sample_style)
+        shutil.copy(resp, folder / "resp.xlsx")
+
+        out_dir = tmp_path / "out"
+        summaries = collect_all(
+            folder, sample_style, out_dir, on_invalid=lambda p, e: "skip"
+        )
+        s = summaries[0]
+        assert s.skipped_count == 1
+        assert s.force_included_count == 0
+
+    def test_force_included_answers_marked(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        """Missing answers in force-included files are filled with the marker."""
+        folder = tmp_path / "r"
+        folder.mkdir()
+        write_metadata_file(
+            sample_questionnaire,
+            folder / f"{sample_questionnaire.questionnaire_id()}_metadata.yaml",
+        )
+        resp = self._make_invalid_response(
+            tmp_path, sample_questionnaire, sample_style, omit_answer="G.Q1"
+        )
+        shutil.copy(resp, folder / "resp.xlsx")
+
+        style = sample_style.model_copy(update={"missing_answer_marker": "XXXXX"})
+        out_dir = tmp_path / "out"
+        summaries = collect_all(
+            folder, style, out_dir, on_invalid=lambda p, e: "include"
+        )
+        wb = load_workbook(summaries[0].output_path, data_only=True)
+        ws = wb["Results"]
+        # Find the G.Q1 row (column B = Q-ID) and read the respondent answer column
+        marker_found = False
+        for row in range(1, ws.max_row + 1):
+            if ws.cell(row=row, column=2).value == "G.Q1":
+                # institution columns start at fixed_cols+1 = 5
+                val = ws.cell(row=row, column=5).value
+                if str(val) == "XXXXX":
+                    marker_found = True
+                break
+        assert marker_found, "Expected XXXXX marker in result for missing G.Q1 answer"
+
+    def test_custom_marker_written_to_result(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        """A custom missing_answer_marker from StyleConfig appears in the result."""
+        folder = tmp_path / "r"
+        folder.mkdir()
+        write_metadata_file(
+            sample_questionnaire,
+            folder / f"{sample_questionnaire.questionnaire_id()}_metadata.yaml",
+        )
+        resp = self._make_invalid_response(
+            tmp_path, sample_questionnaire, sample_style, omit_answer="G.Q1"
+        )
+        shutil.copy(resp, folder / "resp.xlsx")
+
+        from umfrage.models import StyleConfig
+        style = StyleConfig(missing_answer_marker="N/A")
+        out_dir = tmp_path / "out"
+        summaries = collect_all(
+            folder, style, out_dir, on_invalid=lambda p, e: "include"
+        )
+        wb = load_workbook(summaries[0].output_path, data_only=True)
+        ws = wb["Results"]
+        marker_found = False
+        for row in range(1, ws.max_row + 1):
+            if ws.cell(row=row, column=2).value == "G.Q1":
+                val = ws.cell(row=row, column=5).value
+                if str(val) == "N/A":
+                    marker_found = True
+                break
+        assert marker_found, "Expected 'N/A' custom marker in result"
+
+    def test_all_decision_includes_remaining(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        """When the callback returns 'all' for the first file, subsequent invalid
+        files are included without calling the callback again."""
+        folder = tmp_path / "r"
+        folder.mkdir()
+        base = tmp_path / "base.xlsx"
+        generate_questionnaire(sample_questionnaire, sample_style, base)
+        write_metadata_file(
+            sample_questionnaire,
+            folder / f"{sample_questionnaire.questionnaire_id()}_metadata.yaml",
+        )
+        # Create two invalid response files (both missing G.Q1)
+        for i in range(1, 3):
+            resp = folder / f"resp_{i}.xlsx"
+            shutil.copy(base, resp)
+            partial = {k: v for k, v in SAMPLE_ANSWERS.items() if k != "G.Q1"}
+            _fill_response(resp, f"User{i}", f"Org{i}", partial)
+
+        call_count = [0]
+
+        def _callback(path: Path, errors: list) -> str:
+            call_count[0] += 1
+            return "all"  # first call: include all
+
+        out_dir = tmp_path / "out"
+        summaries = collect_all(folder, sample_style, out_dir, on_invalid=_callback)
+        s = summaries[0]
+        # Callback should be called once (first file); second file auto-included
+        assert call_count[0] == 1
+        assert s.force_included_count == 2
+
+    def test_none_decision_skips_remaining(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        """When the callback returns 'none' for the first file, subsequent invalid
+        files are skipped without calling the callback again."""
+        folder = tmp_path / "r"
+        folder.mkdir()
+        base = tmp_path / "base.xlsx"
+        generate_questionnaire(sample_questionnaire, sample_style, base)
+        write_metadata_file(
+            sample_questionnaire,
+            folder / f"{sample_questionnaire.questionnaire_id()}_metadata.yaml",
+        )
+        for i in range(1, 3):
+            resp = folder / f"resp_{i}.xlsx"
+            shutil.copy(base, resp)
+            partial = {k: v for k, v in SAMPLE_ANSWERS.items() if k != "G.Q1"}
+            _fill_response(resp, f"User{i}", f"Org{i}", partial)
+
+        call_count = [0]
+
+        def _callback(path: Path, errors: list) -> str:
+            call_count[0] += 1
+            return "none"  # first call: skip all
+
+        out_dir = tmp_path / "out"
+        summaries = collect_all(folder, sample_style, out_dir, on_invalid=_callback)
+        s = summaries[0]
+        assert call_count[0] == 1
+        assert s.skipped_count == 2
+        assert s.force_included_count == 0
+

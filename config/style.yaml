@@ -63,6 +63,12 @@ result_header:
 # Applied as the background of cells where a required question was left blank.
 warning_color: "FFCCCC"        # Soft red / salmon
 
+# ── Marker text for force-included files with missing answers ─────────────────
+# When 'umfrage collect' prompts you to include a file that failed validation,
+# any answer cells that are still empty are filled with this placeholder text
+# and highlighted in warning_color so they stand out in the result spreadsheet.
+missing_answer_marker: "XXXXX"
+
 # ── Column widths (in character units) for the questionnaire sheet ────────────
 column_widths:
   question_id: 10              # Column A: question ID

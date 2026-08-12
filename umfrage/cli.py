@@ -18,8 +18,10 @@ Commands
 
 from __future__ import annotations
 
+import datetime
 import sys
 from pathlib import Path
+from typing import Callable
 
 import click
 
@@ -195,7 +197,8 @@ def cmd_generate(
     style = _load_style_or_default(style_path)
     out_dir = output_dir or Path(".")
     qid = questionnaire.questionnaire_id()
-    xlsx_path = out_dir / f"{qid}_questionnaire.xlsx"
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    xlsx_path = out_dir / f"{qid}_questionnaire_{timestamp}.xlsx"
 
     try:
         generate_questionnaire(questionnaire, style, xlsx_path)
@@ -206,12 +209,68 @@ def cmd_generate(
     click.echo(f"[OK] Questionnaire generated: {xlsx_path}")
 
     if metadata_file:
-        meta_path = out_dir / f"{qid}_metadata.yaml"
+        meta_path = out_dir / f"{qid}_metadata_{timestamp}.yaml"
         try:
             write_metadata_file(questionnaire, meta_path)
             click.echo(f"[OK] Metadata file written:  {meta_path}")
         except Exception as exc:
             click.echo(f"[WARNING] Could not write metadata file: {exc}")
+
+
+# ── collect helpers ───────────────────────────────────────────────────────────
+
+def _make_invalid_prompt() -> Callable[[Path, list[str]], str]:
+    """Return a stateful interactive callback for handling invalid files.
+
+    The returned callable prompts the user once per file unless the user
+    chose *All* or *None*, which short-circuits all subsequent calls.
+
+    Choices:
+      ``I`` / Enter  — Include this file (default).
+      ``S``          — Skip this file.
+      ``A``          — Include this AND all remaining invalid files.
+      ``N``          — Skip this AND all remaining invalid files.
+
+    When stdin is not a tty the prompt is skipped and ``"include"`` is
+    returned (matching the documented default behaviour).
+
+    Returns:
+        A callable ``(path, errors) -> "include" | "skip"``.
+    """
+    _forced: list[str | None] = [None]  # shared mutable cell for forced decision
+
+    def _prompt(path: Path, errors: list[str]) -> str:
+        if _forced[0] is not None:
+            return _forced[0]
+
+        click.echo(f"\n[WARN] '{path.name}' failed validation:")
+        for err in errors:
+            click.echo(f"  • {err}")
+
+        if not sys.stdin.isatty():
+            click.echo(
+                "  (non-interactive mode: including file with missing answers marked)"
+            )
+            return "include"
+
+        while True:
+            raw = click.prompt(
+                "  Include? [I]nclude / [S]kip / include [A]ll / skip [N]one",
+                default="I",
+            ).strip().upper()
+            if raw in ("I", ""):
+                return "include"
+            if raw == "S":
+                return "skip"
+            if raw == "A":
+                _forced[0] = "include"
+                return "include"
+            if raw == "N":
+                _forced[0] = "skip"
+                return "skip"
+            click.echo("  Please enter I, S, A, or N.")
+
+    return _prompt
 
 
 # ── collect ───────────────────────────────────────────────────────────────────
@@ -251,11 +310,21 @@ def cmd_generate(
         "Defaults to RESPONSES_DIR."
     ),
 )
+@click.option(
+    "--skip-invalid",
+    is_flag=True,
+    default=False,
+    help=(
+        "Silently skip files that fail validation instead of prompting. "
+        "Useful for non-interactive/CI use."
+    ),
+)
 def cmd_collect(
     responses_dir: Path,
     config_path: Path | None,
     style_path: Path | None,
     output_dir: Path | None,
+    skip_invalid: bool,
 ) -> None:
     """Collect and aggregate returned questionnaire files into result spreadsheets.
 
@@ -264,6 +333,13 @@ def cmd_collect(
     Response files are automatically grouped by questionnaire identity
     (config hash stored in each file's hidden _meta sheet). One
     ``results_*.xlsx`` file is produced per questionnaire group found.
+
+    For each file that fails validation the tool interactively asks whether
+    to include it anyway (default) or skip it.  Missing answers in
+    force-included files are filled with the configured
+    ``missing_answer_marker`` (default: ``XXXXX``) and highlighted in the
+    warning colour.  Pass ``--skip-invalid`` to suppress prompting and always
+    skip such files.
 
     Config discovery order:
 
@@ -281,9 +357,10 @@ def cmd_collect(
 
     style = _load_style_or_default(style_path)
     out_dir = output_dir or responses_dir
+    on_invalid = None if skip_invalid else _make_invalid_prompt()
 
     try:
-        summaries = collect_all(responses_dir, style, out_dir, config_override)
+        summaries = collect_all(responses_dir, style, out_dir, config_override, on_invalid=on_invalid)
     except Exception as exc:
         click.echo(f"[ERROR] Collection failed unexpectedly: {exc}", err=True)
         sys.exit(1)
@@ -297,16 +374,25 @@ def cmd_collect(
         return
 
     for s in summaries:
-        status = "OK" if s.skipped_count == 0 else "WARN"
+        has_issues = s.skipped_count > 0 or s.force_included_count > 0
+        status = "WARN" if has_issues else "OK"
+        included = s.valid_count + s.force_included_count
         parts = [
             f"[{status}] '{s.questionnaire_title}': "
-            f"{s.valid_count}/{s.total_files} valid"
+            f"{included}/{s.total_files} included"
         ]
+        if s.force_included_count:
+            parts.append(f" ({s.force_included_count} with issues)")
         if s.skipped_count:
             parts.append(f", {s.skipped_count} skipped")
         if s.output_path:
             parts.append(f" → {s.output_path}")
         click.echo("".join(parts))
+
+        for force_path, errors in s.force_included_files:
+            click.echo(f"       Included with issues: {force_path.name}")
+            for error in errors:
+                click.echo(f"         • {error}")
 
         for skipped_path, errors in s.skipped_files:
             click.echo(f"       Skipped: {skipped_path.name}")
