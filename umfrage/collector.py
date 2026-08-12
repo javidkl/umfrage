@@ -37,6 +37,7 @@ from __future__ import annotations
 
 import datetime
 import json
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -370,10 +371,16 @@ def _build_result_workbook(
         fname_cell = ws.cell(row=row, column=col_idx, value=vr.path.name)
         fname_cell.font = Font(size=8, color=_LINK_COLOR, underline="single")
         fname_cell.fill = make_fill(_SOURCE_BG)
-        fname_cell.alignment = Alignment(horizontal="center", vertical="center")
+        fname_cell.alignment = Alignment(horizontal="left", vertical="center")
         fname_cell.border = make_thin_border()
         try:
-            fname_cell.hyperlink = str(vr.path.resolve().as_uri())
+            # Use a path relative to the results file so the link works on any
+            # machine that has the folder structure intact, without exposing
+            # absolute filesystem paths.
+            rel = os.path.relpath(
+                vr.path.resolve(), output_path.parent.resolve()
+            ).replace(os.sep, "/")
+            fname_cell.hyperlink = rel
         except (ValueError, OSError):
             pass  # Path cannot be resolved on this system; skip hyperlink
     row += 1

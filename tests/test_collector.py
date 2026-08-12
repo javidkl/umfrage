@@ -343,6 +343,20 @@ class TestSourceFileRow:
             f"Expected hyperlinks on all filename cells, got: {hyperlinks_found}"
         )
 
+    def test_filename_cells_are_left_aligned(
+        self, responses_folder: Path, sample_style, tmp_path: Path
+    ) -> None:
+        out_dir = tmp_path / "out"
+        summaries = collect_all(responses_folder, sample_style, out_dir)
+        wb = load_workbook(summaries[0].output_path)
+        ws = wb["Results"]
+        for col in range(5, 5 + 2):
+            cell = ws.cell(row=5, column=col)
+            assert cell.alignment.horizontal == "left", (
+                f"Expected left alignment on filename cell col {col}, "
+                f"got '{cell.alignment.horizontal}'"
+            )
+
     def test_hyperlinks_point_to_xlsx_files(
         self, responses_folder: Path, sample_style, tmp_path: Path
     ) -> None:
@@ -356,6 +370,13 @@ class TestSourceFileRow:
             target = str(cell.hyperlink.target)
             assert target.endswith(".xlsx"), (
                 f"Hyperlink target does not end with .xlsx: {target}"
+            )
+            # Must be relative — no absolute path or file:// URI leaked
+            assert not target.startswith("file://"), (
+                f"Hyperlink should be relative, not a file:// URI: {target}"
+            )
+            assert not target.startswith("/"), (
+                f"Hyperlink should be relative, not absolute: {target}"
             )
 
     def test_german_source_file_label_translated(
