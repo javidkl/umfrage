@@ -253,9 +253,7 @@ umfrage/
 ├── docs/
 │   ├── llm_guide.md               AI/LLM authoring guide
 │   └── questionnaire.schema.json  JSON Schema for IDE validation
-├── tests/                         pytest test suite (115 tests)
-├── examples/
-│   └── questionnaire_example.yaml
+├── tests/                         pytest test suite (163 tests)
 ├── pyproject.toml
 ├── LICENSE                        Apache 2.0
 └── CHANGELOG.md

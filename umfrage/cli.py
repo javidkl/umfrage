@@ -53,7 +53,7 @@ def main() -> None:
       1. Author a questionnaire YAML (use config/questionnaire_sample.yaml
          as a template or docs/llm_guide.md as an LLM prompt).
       2. Validate:   umfrage validate config/questionnaire.yaml
-      3. Generate:   umfrage generate config/questionnaire.yaml --metadata-file
+      3. Generate:   umfrage generate config/questionnaire.yaml
       4. Distribute the .xlsx to respondents.
       5. Collect:    umfrage collect responses/
     """
@@ -145,13 +145,16 @@ def cmd_validate(config: Path, style_path: Path | None) -> None:
     help="Path to style.yaml. If omitted, config/style.yaml is tried, then defaults.",
 )
 @click.option(
-    "--metadata-file",
+    "--no-metadata-file",
+    "metadata_file",
     is_flag=True,
-    default=False,
+    flag_value=False,
+    default=True,
     help=(
-        "Write a companion *_metadata.yaml file alongside the questionnaire. "
-        "The file embeds the full questionnaire model so that 'umfrage collect' "
-        "can be run without the original questionnaire.yaml."
+        "Skip writing the companion *_metadata.yaml file. "
+        "By default the metadata file is always written alongside the "
+        "questionnaire so that 'umfrage collect' can be run without the "
+        "original questionnaire.yaml being present."
     ),
 )
 def cmd_generate(

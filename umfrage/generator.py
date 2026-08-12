@@ -33,7 +33,9 @@ from pathlib import Path
 
 import yaml
 from openpyxl import Workbook
-from openpyxl.styles import Alignment, Protection
+from openpyxl.formatting.rule import Rule
+from openpyxl.styles import Alignment, Border, PatternFill, Protection, Side
+from openpyxl.styles.differential import DifferentialStyle
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.datavalidation import DataValidation
 
@@ -180,6 +182,7 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
     )
     row += 1
 
+    required_answer_cells: list = []
     for resp_field in questionnaire.respondent_fields:
         ws.row_dimensions[row].height = 20
         label_cell = ws.cell(row=row, column=COL_ID, value=resp_field.label + ":")
@@ -193,6 +196,8 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
         ws.merge_cells(
             start_row=row, start_column=COL_TEXT, end_row=row, end_column=TOTAL_COLS
         )
+        if resp_field.required:
+            required_answer_cells.append(value_cell)
         row += 1
 
     # ── Spacer ────────────────────────────────────────────────────────────────
@@ -200,6 +205,12 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
     row += 1
 
     # ── Sections and questions ────────────────────────────────────────────────
+    # Collect (cell, answer_config) pairs so all validations can be registered
+    # as consolidated DataValidation objects (one per unique spec) after the
+    # layout pass.  This prevents spreadsheet apps from re-merging duplicate
+    # validations incorrectly when the file is resaved.
+    # required_answer_cells is used separately to apply conditional formatting.
+    pending_validations: list[tuple] = []
     question_index = 0
     for section in questionnaire.sections:
         # Section header row
@@ -243,7 +254,9 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
 
             answer_cell = ws.cell(row=row, column=COL_ANSWER, value="")
             apply_answer_style(answer_cell, style)
-            _add_data_validation(ws, answer_cell, q.answer, translator)
+            pending_validations.append((answer_cell, q.answer))
+            if q.required:
+                required_answer_cells.append(answer_cell)
 
             comment_text = _build_comment_text(q, translator)
             comment_cell = ws.cell(row=row, column=COL_COMMENT, value=comment_text)
@@ -255,6 +268,9 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
 
             question_index += 1
             row += 1
+
+    _apply_consolidated_validations(ws, pending_validations, translator)
+    _apply_required_formatting(ws, required_answer_cells)
 
 
 def _build_comment_text(q, translator: Translator) -> str:
@@ -273,38 +289,90 @@ def _build_comment_text(q, translator: Translator) -> str:
     return ""
 
 
-def _add_data_validation(ws, cell, answer_config, translator: Translator) -> None:
-    """Attach Excel data validation to an answer cell based on the answer type."""
-    if answer_config.type == AnswerType.SCALE:
-        if answer_config.min_value is not None and answer_config.max_value is not None:
-            dv = DataValidation(
-                type="whole",
-                operator="between",
-                formula1=str(answer_config.min_value),
-                formula2=str(answer_config.max_value),
-                showErrorMessage=True,
-                errorTitle=translator.t("dv_error_title"),
-                error=translator.t(
-                    "dv_scale_error",
-                    min=answer_config.min_value,
-                    max=answer_config.max_value,
-                ),
-            )
-            ws.add_data_validation(dv)
-            dv.add(cell)
+def _apply_required_formatting(ws, required_cells: list) -> None:
+    """Apply conditional formatting to required answer cells.
 
-    elif answer_config.type == AnswerType.YES_NO:
-        yes_val, no_val = translator.yes_no_values()
-        dv = DataValidation(
-            type="list",
-            formula1=translator.yes_no_formula(),
-            showErrorMessage=True,
-            errorTitle=translator.t("dv_error_title"),
-            error=translator.t("dv_yesno_error", yes=yes_val, no=no_val),
-        )
-        ws.add_data_validation(dv)
-        dv.add(cell)
-    # FREETEXT: no data validation added; any text is accepted.
+    When a required cell is blank the answer column is highlighted with a
+    soft-red background and a red border frame, guiding respondents to fill
+    in all mandatory questions.  The highlight disappears automatically once
+    the respondent enters a value.
+    """
+    if not required_cells:
+        return
+
+    dxf = DifferentialStyle(
+        fill=PatternFill(
+            start_color="FFE5E5",
+            end_color="FFE5E5",
+            fill_type="solid",
+        ),
+        border=Border(
+            left=Side(border_style="thin", color="CC0000"),
+            right=Side(border_style="thin", color="CC0000"),
+            top=Side(border_style="thin", color="CC0000"),
+            bottom=Side(border_style="thin", color="CC0000"),
+        ),
+    )
+    # The formula uses a relative reference to the first required cell; Excel
+    # evaluates it relatively for every cell listed in the sqref.
+    first_coord = required_cells[0].coordinate
+    rule = Rule(type="expression", dxf=dxf, formula=[f"ISBLANK({first_coord})"])
+    sqref = " ".join(cell.coordinate for cell in required_cells)
+    ws.conditional_formatting.add(sqref, rule)
+
+
+def _apply_consolidated_validations(
+    ws,
+    pending: list[tuple],
+    translator: Translator,
+) -> None:
+    """Register one DataValidation object per unique spec across all answer cells.
+
+    Grouping identical validations into a single DataValidation (with a
+    multi-cell sqref) prevents Excel from re-merging duplicate entries when
+    the file is resaved, which would otherwise cause cells to receive the
+    wrong validation rule.
+    """
+    dv_map: dict[tuple, DataValidation] = {}
+
+    for cell, answer_config in pending:
+        if answer_config.type == AnswerType.SCALE:
+            if answer_config.min_value is None or answer_config.max_value is None:
+                continue
+            key = ("scale", answer_config.min_value, answer_config.max_value)
+            if key not in dv_map:
+                dv = DataValidation(
+                    type="whole",
+                    operator="between",
+                    formula1=str(answer_config.min_value),
+                    formula2=str(answer_config.max_value),
+                    showErrorMessage=True,
+                    errorTitle=translator.t("dv_error_title"),
+                    error=translator.t(
+                        "dv_scale_error",
+                        min=answer_config.min_value,
+                        max=answer_config.max_value,
+                    ),
+                )
+                ws.add_data_validation(dv)
+                dv_map[key] = dv
+            dv_map[key].add(cell)
+
+        elif answer_config.type == AnswerType.YES_NO:
+            key = ("yes_no",)
+            if key not in dv_map:
+                yes_val, no_val = translator.yes_no_values()
+                dv = DataValidation(
+                    type="list",
+                    formula1=translator.yes_no_formula(),
+                    showErrorMessage=True,
+                    errorTitle=translator.t("dv_error_title"),
+                    error=translator.t("dv_yesno_error", yes=yes_val, no=no_val),
+                )
+                ws.add_data_validation(dv)
+                dv_map[key] = dv
+            dv_map[key].add(cell)
+        # FREETEXT: no data validation added; any text is accepted.
 
 
 def _build_meta_sheet(wb: Workbook, questionnaire: Questionnaire) -> None:
