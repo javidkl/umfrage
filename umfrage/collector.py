@@ -43,7 +43,7 @@ from typing import Any
 
 import yaml
 from openpyxl import Workbook, load_workbook
-from openpyxl.styles import Alignment, PatternFill
+from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 from umfrage.config_loader import ConfigError
@@ -342,6 +342,40 @@ def _build_result_workbook(
         apply_result_header_style(cell, style)
         cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
         ws.column_dimensions[get_column_letter(col_idx)].width = width
+    row += 1
+
+    # ── Row 5: Source-file row ────────────────────────────────────────────────
+    # Shows the filename of each response file for quality control, with a
+    # clickable file:// hyperlink back to the original .xlsx on disk.
+    _SOURCE_BG = "F0F4F8"   # very light blue-grey
+    _LINK_COLOR = "0563C1"  # standard hyperlink blue
+
+    ws.row_dimensions[row].height = 16
+    label_cell = ws.cell(
+        row=row, column=1,
+        value=translator.t("result_col_source_file"),
+    )
+    label_cell.font = Font(size=8, italic=True, color="666666")
+    label_cell.fill = make_fill(_SOURCE_BG)
+    label_cell.alignment = Alignment(horizontal="left", vertical="center")
+    label_cell.border = make_thin_border()
+
+    for c in range(2, fixed_cols + 1):
+        bg_cell = ws.cell(row=row, column=c)
+        bg_cell.fill = make_fill(_SOURCE_BG)
+        bg_cell.border = make_thin_border()
+
+    for resp_idx, vr in enumerate(valid_results):
+        col_idx = fixed_cols + 1 + resp_idx
+        fname_cell = ws.cell(row=row, column=col_idx, value=vr.path.name)
+        fname_cell.font = Font(size=8, color=_LINK_COLOR, underline="single")
+        fname_cell.fill = make_fill(_SOURCE_BG)
+        fname_cell.alignment = Alignment(horizontal="center", vertical="center")
+        fname_cell.border = make_thin_border()
+        try:
+            fname_cell.hyperlink = str(vr.path.resolve().as_uri())
+        except (ValueError, OSError):
+            pass  # Path cannot be resolved on this system; skip hyperlink
     row += 1
 
     # ── Question rows ─────────────────────────────────────────────────────────

@@ -288,3 +288,115 @@ class TestResultWorkbook:
         ws = self._run_and_open(responses_folder, sample_style, tmp_path)
         title_cell = ws.cell(row=1, column=1).value
         assert sample_questionnaire.title in str(title_cell)
+
+
+class TestSourceFileRow:
+    """Row 5 of the result sheet must list response filenames with hyperlinks."""
+
+    def _result_ws(self, responses_folder, sample_style, tmp_path):
+        out_dir = tmp_path / "out"
+        summaries = collect_all(responses_folder, sample_style, out_dir)
+        wb = load_workbook(summaries[0].output_path, data_only=True)
+        return wb["Results"]
+
+    def test_source_file_row_contains_filenames(
+        self, responses_folder: Path, sample_style, tmp_path: Path
+    ) -> None:
+        ws = self._result_ws(responses_folder, sample_style, tmp_path)
+        # Row 5 is the source-file row (row 4 = institution names)
+        row5 = [ws.cell(row=5, column=c).value for c in range(1, 8)]
+        assert any(
+            str(v).endswith(".xlsx") for v in row5 if v is not None
+        ), f"No .xlsx filename found in row 5: {row5}"
+
+    def test_source_file_row_has_both_response_filenames(
+        self, responses_folder: Path, sample_style, tmp_path: Path
+    ) -> None:
+        ws = self._result_ws(responses_folder, sample_style, tmp_path)
+        row5 = [str(ws.cell(row=5, column=c).value or "") for c in range(1, 8)]
+        assert any("response_1" in v for v in row5), "response_1.xlsx not found in row 5"
+        assert any("response_2" in v for v in row5), "response_2.xlsx not found in row 5"
+
+    def test_source_file_label_in_col_one(
+        self, responses_folder: Path, sample_style, tmp_path: Path
+    ) -> None:
+        ws = self._result_ws(responses_folder, sample_style, tmp_path)
+        label = ws.cell(row=5, column=1).value
+        # Label must be non-empty (translated "Source file" / "Quelldatei")
+        assert label is not None and str(label).strip() != ""
+
+    def test_filename_cells_have_hyperlinks(
+        self, responses_folder: Path, sample_style, tmp_path: Path
+    ) -> None:
+        """Filename cells in the source-file row must carry file:// hyperlinks."""
+        out_dir = tmp_path / "out"
+        summaries = collect_all(responses_folder, sample_style, out_dir)
+        # Reload *without* data_only so hyperlink metadata is available
+        wb = load_workbook(summaries[0].output_path)
+        ws = wb["Results"]
+        # Fixed cols: Section(1), Q-ID(2), Question(3), Scale(4) — inst cols start at 5
+        hyperlinks_found = []
+        for col in range(5, 5 + 2):  # 2 respondents
+            cell = ws.cell(row=5, column=col)
+            hyperlinks_found.append(cell.hyperlink is not None)
+        assert all(hyperlinks_found), (
+            f"Expected hyperlinks on all filename cells, got: {hyperlinks_found}"
+        )
+
+    def test_hyperlinks_point_to_xlsx_files(
+        self, responses_folder: Path, sample_style, tmp_path: Path
+    ) -> None:
+        out_dir = tmp_path / "out"
+        summaries = collect_all(responses_folder, sample_style, out_dir)
+        wb = load_workbook(summaries[0].output_path)
+        ws = wb["Results"]
+        for col in range(5, 5 + 2):
+            cell = ws.cell(row=5, column=col)
+            assert cell.hyperlink is not None
+            target = str(cell.hyperlink.target)
+            assert target.endswith(".xlsx"), (
+                f"Hyperlink target does not end with .xlsx: {target}"
+            )
+
+    def test_german_source_file_label_translated(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        """German questionnaire must show 'Quelldatei' as the row label."""
+        import shutil
+        from umfrage.generator import generate_questionnaire, write_metadata_file
+
+        q = sample_questionnaire.model_copy(update={"language": "de"})
+        folder = tmp_path / "de_responses"
+        folder.mkdir()
+        base = tmp_path / "base_de.xlsx"
+        generate_questionnaire(q, sample_style, base)
+        write_metadata_file(q, folder / f"{q.questionnaire_id()}_metadata.yaml")
+
+        resp = folder / "antwort_1.xlsx"
+        shutil.copy(base, resp)
+        # Fill required fields so validation passes
+        wb_resp = load_workbook(resp)
+        ws_resp = wb_resp["Questionnaire"]
+        for row in range(1, ws_resp.max_row + 1):
+            v = ws_resp.cell(row=row, column=1).value
+            if v == "Name:":
+                ws_resp.cell(row=row, column=2).value = "Hans"
+            elif v == "Institution:":
+                ws_resp.cell(row=row, column=2).value = "Uni Berlin"
+            elif v == "G.Q1":
+                ws_resp.cell(row=row, column=3).value = 3
+            elif v == "G.Q2":
+                ws_resp.cell(row=row, column=3).value = "Ja"
+            elif v == "T.Q1":
+                ws_resp.cell(row=row, column=3).value = 5
+        wb_resp.save(resp)
+
+        out_dir = tmp_path / "out_de"
+        summaries = collect_all(folder, sample_style, out_dir)
+        assert summaries, "No collection summaries returned"
+        wb_result = load_workbook(summaries[0].output_path, data_only=True)
+        ws_result = wb_result["Results"]
+        label = str(ws_result.cell(row=5, column=1).value or "")
+        assert "Quelldatei" in label, (
+            f"Expected 'Quelldatei' for German label, got: '{label}'"
+        )

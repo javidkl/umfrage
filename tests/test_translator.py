@@ -127,7 +127,7 @@ class TestAllLanguagesComplete:
         "dv_error_title", "dv_scale_error", "dv_yesno_error",
         "result_title_suffix", "result_collected", "result_organizer",
         "result_col_section", "result_col_qid", "result_col_question",
-        "result_col_scale_comment",
+        "result_col_scale_comment", "result_col_source_file",
     ]
 
     @pytest.mark.parametrize("lang", list_languages())
