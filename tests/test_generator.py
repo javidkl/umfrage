@@ -10,7 +10,7 @@ import yaml
 from openpyxl import load_workbook
 
 from umfrage.generator import generate_questionnaire, write_metadata_file
-from umfrage.models import StyleConfig
+from umfrage.models import StyleConfig, Questionnaire
 
 
 class TestGeneratedFile:
@@ -284,4 +284,198 @@ class TestI18nGeneration:
         formulas = [dv.formula1 for dv in list_dvs]
         assert any("Yes" in f for f in formulas), (
             "English 'Yes' not found in list-validation formula"
+        )
+
+
+class TestChoicesDataValidation:
+    """Verify that CHOICES questions produce correct Excel data-validation objects."""
+
+    def _make_choices_questionnaire(self, choice_lists=None, questions=None):
+        from umfrage.models import OrganizerInfo, RespondentField, Section
+        return Questionnaire(
+            title="Choices Test",
+            choice_lists=choice_lists or {},
+            organizer=OrganizerInfo(name="A", institution="B", email="a@b.org"),
+            respondent_fields=[RespondentField(label="Name")],
+            sections=[Section(title="S1", questions=questions)],
+        )
+
+    def test_choices_cell_has_list_validation(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        out = tmp_path / "choices.xlsx"
+        generate_questionnaire(sample_questionnaire, sample_style, out)
+        wb = load_workbook(out)
+        ws = wb["Questionnaire"]
+        list_dvs = [dv for dv in ws.data_validations.dataValidation if dv.type == "list"]
+        # At least two list DVs: one for yes_no, one for choices
+        assert len(list_dvs) >= 2
+
+    def test_choices_dv_formula_is_quoted_csv(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        out = tmp_path / "choices.xlsx"
+        generate_questionnaire(sample_questionnaire, sample_style, out)
+        wb = load_workbook(out)
+        ws = wb["Questionnaire"]
+        list_dvs = [dv for dv in ws.data_validations.dataValidation if dv.type == "list"]
+        # The choices DV formula must be a double-quoted comma-separated string
+        choices_formulas = [f for f in (dv.formula1 for dv in list_dvs) if "Poor" in f]
+        assert choices_formulas, "Expected a list-DV formula containing 'Poor'"
+        formula = choices_formulas[0]
+        assert formula.startswith('"') and formula.endswith('"')
+        assert "," in formula
+
+    def test_identical_choice_lists_share_one_dv_object(
+        self, tmp_path: Path, sample_style
+    ) -> None:
+        from umfrage.models import AnswerConfig, AnswerType, Question
+        opts = ["Alpha", "Beta", "Gamma"]
+        q = self._make_choices_questionnaire(
+            questions=[
+                Question(id="Q1", text="Q1", answer=AnswerConfig(type=AnswerType.CHOICES, choices=opts)),
+                Question(id="Q2", text="Q2", answer=AnswerConfig(type=AnswerType.CHOICES, choices=opts)),
+            ]
+        )
+        out = tmp_path / "shared.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out)
+        ws = wb["Questionnaire"]
+        choices_dvs = [
+            dv for dv in ws.data_validations.dataValidation
+            if dv.type == "list" and "Alpha" in dv.formula1
+        ]
+        assert len(choices_dvs) == 1, (
+            "Two questions with identical choices should share one DV object"
+        )
+
+    def test_different_choice_lists_get_separate_dv_objects(
+        self, tmp_path: Path, sample_style
+    ) -> None:
+        from umfrage.models import AnswerConfig, AnswerType, Question
+        q = self._make_choices_questionnaire(
+            questions=[
+                Question(id="Q1", text="Q1", answer=AnswerConfig(
+                    type=AnswerType.CHOICES, choices=["A", "B"])),
+                Question(id="Q2", text="Q2", answer=AnswerConfig(
+                    type=AnswerType.CHOICES, choices=["X", "Y", "Z"])),
+            ]
+        )
+        out = tmp_path / "different.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out)
+        ws = wb["Questionnaire"]
+        choices_dvs = [
+            dv for dv in ws.data_validations.dataValidation if dv.type == "list"
+        ]
+        formulas = [dv.formula1 for dv in choices_dvs]
+        assert any("A" in f and "B" in f for f in formulas)
+        assert any("X" in f and "Y" in f for f in formulas)
+
+    def test_choices_comment_shows_options_by_default(
+        self, tmp_path: Path, sample_style
+    ) -> None:
+        from umfrage.models import AnswerConfig, AnswerType, Question
+        q = self._make_choices_questionnaire(
+            questions=[Question(
+                id="Q1", text="Q1",
+                answer=AnswerConfig(type=AnswerType.CHOICES, choices=["Red", "Green", "Blue"]),
+            )]
+        )
+        out = tmp_path / "comment.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out, data_only=True)
+        ws = wb["Questionnaire"]
+        comments = [
+            ws.cell(row=r, column=4).value
+            for r in range(1, ws.max_row + 1)
+        ]
+        assert any(
+            v and "Red" in str(v) for v in comments
+        ), "Choice options should appear in the comment column by default"
+
+    def test_choices_comment_suppressed_when_opted_out(
+        self, tmp_path: Path, sample_style
+    ) -> None:
+        from umfrage.models import AnswerConfig, AnswerType, Question
+        q = self._make_choices_questionnaire(
+            questions=[Question(
+                id="Q1", text="Q1",
+                answer=AnswerConfig(
+                    type=AnswerType.CHOICES,
+                    choices=["Red", "Green", "Blue"],
+                    show_choices_in_comment=False,
+                    description="Pick a colour",
+                ),
+            )]
+        )
+        out = tmp_path / "no_comment.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out, data_only=True)
+        ws = wb["Questionnaire"]
+        comments = [
+            ws.cell(row=r, column=4).value
+            for r in range(1, ws.max_row + 1)
+        ]
+        assert not any(v and "Red" in str(v) for v in comments), (
+            "Choice options should not appear in comment column when show_choices_in_comment=False"
+        )
+        assert any(v and "Pick a colour" in str(v) for v in comments), (
+            "description should still appear in comment column when show_choices_in_comment=False"
+        )
+
+    def test_explicit_comment_overrides_choices_list(
+        self, tmp_path: Path, sample_style
+    ) -> None:
+        """comment is a complete override for CHOICES, same as for scale/yes_no/freetext."""
+        from umfrage.models import AnswerConfig, AnswerType, Question
+        q = self._make_choices_questionnaire(
+            questions=[Question(
+                id="Q1", text="Q1",
+                comment="Custom scenario text",
+                answer=AnswerConfig(
+                    type=AnswerType.CHOICES,
+                    choices=["Red", "Green", "Blue"],
+                    show_choices_in_comment=True,  # has no effect when comment is set
+                ),
+            )]
+        )
+        out = tmp_path / "comment_override.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out, data_only=True)
+        ws = wb["Questionnaire"]
+        comments = [ws.cell(row=r, column=4).value for r in range(1, ws.max_row + 1)]
+        assert any(v and "Custom scenario text" in str(v) for v in comments), (
+            "explicit comment should appear"
+        )
+        assert not any(v and "Red" in str(v) for v in comments), (
+            "choices list must not be appended when comment is set (complete override)"
+        )
+
+    def test_comment_override_takes_full_priority(
+        self, tmp_path: Path, sample_style
+    ) -> None:
+        """comment overrides choices list regardless of show_choices_in_comment=False."""
+        from umfrage.models import AnswerConfig, AnswerType, Question
+        q = self._make_choices_questionnaire(
+            questions=[Question(
+                id="Q1", text="Q1",
+                comment="Scenario description",
+                answer=AnswerConfig(
+                    type=AnswerType.CHOICES,
+                    choices=["Red", "Green", "Blue"],
+                    show_choices_in_comment=False,
+                ),
+            )]
+        )
+        out = tmp_path / "comment_no_list.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out, data_only=True)
+        ws = wb["Questionnaire"]
+        comments = [ws.cell(row=r, column=4).value for r in range(1, ws.max_row + 1)]
+        assert any(v and "Scenario description" in str(v) for v in comments), (
+            "explicit comment should appear"
+        )
+        assert not any(v and "Red" in str(v) for v in comments), (
+            "choices list must not appear when comment is set"
         )

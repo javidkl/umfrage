@@ -31,17 +31,27 @@ from umfrage.config_loader import ConfigError, load_questionnaire, load_style
 from umfrage.generator import generate_questionnaire, write_metadata_file
 from umfrage.models import StyleConfig
 
-# Resolved relative to the current working directory when no --style is given.
-_DEFAULT_STYLE_PATH = Path("config/style.yaml")
+# Auto-detection order when --style is not given (both relative to CWD).
+_STYLE_CWD = Path("style.yaml")
+_STYLE_CONFIG = Path("config/style.yaml")
 
 
-def _load_style_or_default(style_path: Path | None) -> StyleConfig:
-    """Load a StyleConfig from *style_path*, from the default path, or return defaults."""
+def _resolve_style(style_path: Path | None) -> tuple[StyleConfig, str]:
+    """Return (StyleConfig, info_message) for the appropriate style source.
+
+    Priority:
+      1. Explicit ``--style`` path.
+      2. ``style.yaml`` in the current working directory.
+      3. ``config/style.yaml`` relative to the current working directory.
+      4. Built-in defaults.
+    """
     if style_path is not None:
-        return load_style(style_path)
-    if _DEFAULT_STYLE_PATH.exists():
-        return load_style(_DEFAULT_STYLE_PATH)
-    return StyleConfig()
+        return load_style(style_path), f"[INFO] Using style: {style_path}"
+    if _STYLE_CWD.exists():
+        return load_style(_STYLE_CWD), f"[INFO] Using style: {_STYLE_CWD}"
+    if _STYLE_CONFIG.exists():
+        return load_style(_STYLE_CONFIG), f"[INFO] Using style: {_STYLE_CONFIG}"
+    return StyleConfig(), "[INFO] No style file found; using built-in defaults."
 
 
 @click.group()
@@ -75,14 +85,17 @@ def main() -> None:
     metavar="STYLE",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
-    help="Path to style.yaml. If omitted, config/style.yaml is tried, then defaults.",
+    help=(
+        "Path to style.yaml. If omitted, style.yaml in the current directory is "
+        "tried first, then config/style.yaml, then built-in defaults."
+    ),
 )
 def cmd_validate(config: Path, style_path: Path | None) -> None:
     """Validate a questionnaire YAML config for syntax and completeness.
 
     CONFIG is the path to the questionnaire YAML file to check.
 
-    Runs Pydantic structural validation followed by nine completeness checks
+    Runs Pydantic structural validation followed by completeness checks
     (unique IDs, slug-safe IDs, scale min/max, email format, etc.).
     Exits with code 1 if any errors are found; warnings are printed but do
     not cause a non-zero exit.
@@ -93,13 +106,12 @@ def cmd_validate(config: Path, style_path: Path | None) -> None:
         click.echo(f"[ERROR] {exc}", err=True)
         sys.exit(1)
 
-    if style_path:
-        try:
-            load_style(style_path)
-            click.echo(f"  Style config OK: {style_path}")
-        except ConfigError as exc:
-            click.echo(f"[ERROR] Style config: {exc}", err=True)
-            sys.exit(1)
+    try:
+        _, style_msg = _resolve_style(style_path)
+    except ConfigError as exc:
+        click.echo(f"[ERROR] Style config: {exc}", err=True)
+        sys.exit(1)
+    click.echo(style_msg)
 
     check_result = check_questionnaire(questionnaire)
 
@@ -144,7 +156,10 @@ def cmd_validate(config: Path, style_path: Path | None) -> None:
     metavar="STYLE",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
-    help="Path to style.yaml. If omitted, config/style.yaml is tried, then defaults.",
+    help=(
+        "Path to style.yaml. If omitted, style.yaml in the current directory is "
+        "tried first, then config/style.yaml, then built-in defaults."
+    ),
 )
 @click.option(
     "--no-metadata-file",
@@ -194,7 +209,8 @@ def cmd_generate(
     for warning in check_result.warnings:
         click.echo(f"[WARNING] {warning}")
 
-    style = _load_style_or_default(style_path)
+    style, style_msg = _resolve_style(style_path)
+    click.echo(style_msg)
     out_dir = output_dir or Path(".")
     qid = questionnaire.questionnaire_id()
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -298,7 +314,10 @@ def _make_invalid_prompt() -> Callable[[Path, list[str]], str]:
     metavar="STYLE",
     type=click.Path(exists=True, dir_okay=False, path_type=Path),
     default=None,
-    help="Path to style.yaml. If omitted, config/style.yaml is tried, then defaults.",
+    help=(
+        "Path to style.yaml. If omitted, style.yaml in the current directory is "
+        "tried first, then config/style.yaml, then built-in defaults."
+    ),
 )
 @click.option(
     "--output-dir", "-o",
@@ -355,7 +374,8 @@ def cmd_collect(
             click.echo(f"[ERROR] {exc}", err=True)
             sys.exit(1)
 
-    style = _load_style_or_default(style_path)
+    style, style_msg = _resolve_style(style_path)
+    click.echo(style_msg)
     out_dir = output_dir or responses_dir
     on_invalid = None if skip_invalid else _make_invalid_prompt()
 

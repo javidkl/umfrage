@@ -39,6 +39,7 @@ and inline validation in VS Code (requires the YAML extension):
 | `title`            | string           | ✅       | —       | Shown as the large header in the Excel file. Also used as the file-name slug. |
 | `version`          | string           | ❌       | `"1.0"` | Increment when changing questions after distribution. |
 | `language`         | string           | ❌       | `"en"`  | Language code for all static UI labels (see §3.7). |
+| `choice_lists`     | object           | ❌       | `{}`    | Named reusable option lists for `choices` questions (see §3.8). |
 | `organizer`        | object           | ✅       | —       | See §3.2 |
 | `respondent_fields`| array of objects | ✅       | —       | At least one required. See §3.3 |
 | `sections`         | array of objects | ✅       | —       | At least one required. See §3.4 |
@@ -168,6 +169,38 @@ exists. An unknown code blocks Excel generation.
 
 ---
 
+### 3.8 `choice_lists` — Named Reusable Option Lists
+
+Define option lists once at the top level and reference them in any number of
+`choices`-type questions with `choices_ref: <name>`. This avoids repeating the
+same list in multiple places and ensures a consistent dropdown across questions.
+
+```yaml
+choice_lists:
+  frequency:            # key: any identifier you choose
+    - "Never"
+    - "Rarely"
+    - "Sometimes"
+    - "Often"
+    - "Always"
+  satisfaction_level:
+    - "Very dissatisfied"
+    - "Dissatisfied"
+    - "Neutral"
+    - "Satisfied"
+    - "Very satisfied"
+```
+
+**Rules:**
+- Each list must have **at least 2** options.
+- The comma-joined option string must not exceed **255 characters** (Excel data-
+  validation formula limit). Shorten labels or reduce the number of options if needed.
+- Option strings must be **unique** within a list (case-insensitive; duplicates
+  produce a warning).
+- Omit `choice_lists` entirely if all choices questions use inline `choices: [...]`.
+
+---
+
 ## 4. Answer Type Reference
 
 ### 4.1 `scale` — Numeric Scale
@@ -229,6 +262,57 @@ answer:
 
 ---
 
+### 4.4 `choices` — Fixed Option Dropdown
+
+Respondents select one option from a predefined list. The cell shows an Excel
+dropdown. The Scale/Comment column lists the options as a hint (suppressable).
+Validation accepts the answer case-insensitively.
+
+**Option A — inline list (one-off):**
+```yaml
+answer:
+  type: choices
+  choices:
+    - "Email"
+    - "Video call"
+    - "In-person meeting"
+    - "Other"
+```
+
+**Option B — named list (reusable):**
+```yaml
+answer:
+  type: choices
+  choices_ref: frequency    # references choice_lists.frequency
+```
+
+**Suppressing the option list from the comment column (no `comment` set):**
+```yaml
+answer:
+  type: choices
+  choices_ref: satisfaction_level
+  show_choices_in_comment: false  # options not listed in column D
+  description: "Select one"        # optional replacement hint
+```
+
+> **Note:** `show_choices_in_comment` only takes effect when **no** `comment` is set on the
+> question. An explicit `comment` is always a complete override (same as for `scale`,
+> `yes_no`, and `freetext`) and suppresses the auto-generated options hint entirely,
+> regardless of this flag. In that case the flag is redundant and can be omitted.
+
+**Rules:**
+- Provide **either** `choices` or `choices_ref`, **not both**.
+- `choices_ref` must reference a key defined in `choice_lists`.
+- At least **2** options are required.
+- Comma-joined options must not exceed **255 characters**.
+- Do **not** set `min_value` or `max_value` (a warning will be raised).
+- `show_choices_in_comment` defaults to `true`; set to `false` to suppress the
+  auto-generated option list when no `comment` is set and the list would make
+  column D too wide. Rarely needed; omit in most cases.
+- The `required` flag applies normally.
+
+---
+
 ## 5. Validation Rules (mirrors `umfrage validate`)
 
 The following errors **block** file generation:
@@ -241,10 +325,16 @@ The following errors **block** file generation:
 6. `scale` answer where `min_value >= max_value`.
 7. `respondent_fields` is empty.
 8. Organizer `email` is not a valid email address.
+9. `choices` answer has neither `choices` nor `choices_ref`.
+10. `choices` answer has both `choices` and `choices_ref`.
+11. `choices_ref` references an undefined key in `choice_lists`.
+12. Resolved choices list has fewer than 2 items.
+13. Comma-joined choices exceed 255 characters.
 
 The following produce **warnings** (generation proceeds):
 
-- `yes_no` or `freetext` answer has `min_value`/`max_value` set.
+- `yes_no`, `freetext`, or `choices` answer has `min_value`/`max_value` set.
+- Duplicate option strings (case-insensitive) in a choices list.
 
 ---
 
@@ -267,6 +357,20 @@ respondent_fields:
   - label: "Institution"
   - label: "Email"
     required: false
+
+choice_lists:
+  satisfaction_level:
+    - "Very dissatisfied"
+    - "Dissatisfied"
+    - "Neutral"
+    - "Satisfied"
+    - "Very satisfied"
+  frequency:
+    - "Never"
+    - "Rarely"
+    - "Sometimes"
+    - "Often"
+    - "Always"
 
 sections:
   - title: "General Satisfaction"
@@ -291,6 +395,22 @@ sections:
         answer:
           type: freetext
         required: false
+
+      - id: "GEN.Q4"
+        text: "How would you describe the overall quality of the cooperation?"
+        answer:
+          type: choices
+          choices_ref: satisfaction_level
+        required: true
+
+      - id: "GEN.Q5"
+        text: "How often did you exchange information with the project team?"
+        answer:
+          type: choices
+          choices_ref: frequency
+          show_choices_in_comment: false
+          description: "Select frequency"
+        required: true
 
   - title: "Technical Quality"
     questions:
@@ -346,12 +466,22 @@ Follow these rules strictly when generating or editing questionnaire YAML files:
 7. **Use `required: false`** on open-ended or follow-up questions that are
    genuinely optional so respondents are not penalized for skipping them.
 
-9. **Use `language: "de"`** (or another available code) when the questionnaire
-   is intended for German-speaking respondents. This translates all static
-   labels, column headers, and the yes/no dropdown values (`Ja`/`Nein`).
+8. **For `choices` type, provide either `choices` or `choices_ref`, not both.**
+   If reusing the same list in multiple questions, define it in `choice_lists`
+   and use `choices_ref`. Use inline `choices: [...]` for one-off lists.
 
-10. **Validate before generating.** Always run `umfrage validate <file.yaml>`
-   after generating a config to catch any issues before distributing.
+9. **`show_choices_in_comment: false`** suppresses the auto-generated option list
+   in the Scale/Comment column (column D). Only relevant when the list is long
+   (say, more than 5–6 options) **and no `comment` is set** on the question.
+   When a `comment` is present it already overrides the auto-generated hint
+   entirely, making this flag redundant. The dropdown is never affected.
+
+10. **Use `language: "de"`** (or another available code) when the questionnaire
+    is intended for German-speaking respondents. This translates all static
+    labels, column headers, and the yes/no dropdown values (`Ja`/`Nein`).
+
+11. **Validate before generating.** Always run `umfrage validate <file.yaml>`
+    after generating a config to catch any issues before distributing.
 
 ---
 

@@ -50,7 +50,7 @@ def _fill_response(
     wb.save(xlsx_path)
 
 
-SAMPLE_ANSWERS = {"G.Q1": 4, "G.Q2": "Yes", "G.Q3": "Great work!", "T.Q1": 8}
+SAMPLE_ANSWERS = {"G.Q1": 4, "G.Q2": "Yes", "G.Q3": "Great work!", "G.Q4": "Good", "T.Q1": 8}
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────────
@@ -408,6 +408,8 @@ class TestSourceFileRow:
                 ws_resp.cell(row=row, column=3).value = 3
             elif v == "G.Q2":
                 ws_resp.cell(row=row, column=3).value = "Ja"
+            elif v == "G.Q4":
+                ws_resp.cell(row=row, column=3).value = "Good"
             elif v == "T.Q1":
                 ws_resp.cell(row=row, column=3).value = 5
         wb_resp.save(resp)

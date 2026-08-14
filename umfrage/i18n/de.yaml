@@ -22,6 +22,8 @@ col_scale_comment: "Skala / Kommentar"
 hint_scale: "Skala: {min}–{max}"
 hint_yesno: "Bitte auswählen: Ja oder Nein"
 hint_freetext: "Freitext"
+# {choices} wird durch die durch Komma getrennten Auswahlmöglichkeiten ersetzt.
+hint_choices: "Optionen: {choices}"
 
 # ── Ja / Nein ─────────────────────────────────────────────────────────────────
 # Diese Werte werden sowohl als Excel-Dropdown-Optionen als auch bei der
@@ -38,6 +40,7 @@ hint_freetext: "Freitext"
 dv_error_title: "Ungültiger Wert"
 dv_scale_error: "Bitte geben Sie eine ganze Zahl zwischen {min} und {max} ein."
 dv_yesno_error: "Bitte wählen Sie '{yes}' oder '{no}' aus der Auswahlliste."
+dv_choices_error: "Bitte wählen Sie eine der verfügbaren Optionen aus der Auswahlliste aus."
 
 # ── Labels im Ergebnis-Tabellenblatt ─────────────────────────────────────────
 result_title_suffix: "— Ergebnisse"

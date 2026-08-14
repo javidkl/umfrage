@@ -56,6 +56,13 @@ def check_questionnaire(q: Questionnaire) -> CheckResult:
     7. FREETEXT answers have no ``min_value``/``max_value`` (warning if present).
     8. ``respondent_fields`` list is non-empty.
     9. Organizer email passes a basic format check.
+    10. Language code is available.
+    11. CHOICES answers have exactly one of ``choices`` or ``choices_ref`` set.
+    12. ``choices_ref`` references a key that exists in ``q.choice_lists``.
+    13. Resolved choices list has at least 2 items.
+    14. Comma-joined choices fit within Excel's 255-char DV formula limit.
+    15. Choices list contains no duplicate values (case-insensitive, warning only).
+    16. CHOICES answers have no ``min_value``/``max_value`` (warning if present).
 
     Args:
         q: A Pydantic-validated :class:`~umfrage.models.Questionnaire`.
@@ -150,6 +157,75 @@ def check_questionnaire(q: Questionnaire) -> CheckResult:
                         f"Question '{qid}' (FREETEXT): min_value/max_value are "
                         "ignored for the FREETEXT type and will be excluded from "
                         "the generated Excel file."
+                    )
+
+            elif ans.type == AnswerType.CHOICES:
+                # Check 16 — min/max irrelevant for CHOICES
+                if ans.min_value is not None or ans.max_value is not None:
+                    result.add_warning(
+                        f"Question '{qid}' (CHOICES): min_value/max_value are "
+                        "ignored for the CHOICES type."
+                    )
+
+                # Check 11 — exactly one of choices / choices_ref must be set
+                has_inline = bool(ans.choices)
+                has_ref = bool(ans.choices_ref)
+                if not has_inline and not has_ref:
+                    result.add_error(
+                        f"Question '{qid}' (CHOICES): either 'choices' (inline list) "
+                        "or 'choices_ref' (named list from choice_lists) must be set."
+                    )
+                    continue
+                if has_inline and has_ref:
+                    result.add_error(
+                        f"Question '{qid}' (CHOICES): set either 'choices' or "
+                        "'choices_ref', not both."
+                    )
+                    continue
+
+                # Check 12 — choices_ref must resolve
+                if has_ref:
+                    if ans.choices_ref not in q.choice_lists:
+                        result.add_error(
+                            f"Question '{qid}' (CHOICES): choices_ref "
+                            f"'{ans.choices_ref}' is not defined in choice_lists. "
+                            f"Available keys: {sorted(q.choice_lists.keys()) or '(none)'}."
+                        )
+                        continue
+
+                resolved = q.resolved_choices(ans)
+                if resolved is None:
+                    continue  # already reported above
+
+                # Check 13 — at least 2 choices
+                if len(resolved) < 2:
+                    result.add_error(
+                        f"Question '{qid}' (CHOICES): at least 2 options are required, "
+                        f"got {len(resolved)}."
+                    )
+
+                # Check 14 — Excel DV formula length limit (255 chars for the CSV string)
+                formula_str = ",".join(resolved)
+                if len(formula_str) > 255:
+                    result.add_error(
+                        f"Question '{qid}' (CHOICES): the comma-joined choices string "
+                        f"is {len(formula_str)} characters, exceeding Excel's 255-character "
+                        "data-validation formula limit. Shorten the option labels or "
+                        "reduce the number of options."
+                    )
+
+                # Check 15 — no duplicate values (case-insensitive, warning only)
+                seen_lower: set[str] = set()
+                dupes: list[str] = []
+                for opt in resolved:
+                    key = opt.strip().lower()
+                    if key in seen_lower:
+                        dupes.append(opt)
+                    seen_lower.add(key)
+                if dupes:
+                    result.add_warning(
+                        f"Question '{qid}' (CHOICES): duplicate option(s) detected "
+                        f"(case-insensitive): {dupes}."
                     )
 
     return result

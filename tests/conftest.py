@@ -20,10 +20,13 @@ from umfrage.models import (
 
 @pytest.fixture()
 def sample_questionnaire() -> Questionnaire:
-    """Minimal but complete questionnaire covering all three answer types."""
+    """Minimal but complete questionnaire covering all four answer types."""
     return Questionnaire(
         title="Test Survey 2024",
         version="1.0",
+        choice_lists={
+            "satisfaction": ["Poor", "Fair", "Good", "Excellent"],
+        },
         organizer=OrganizerInfo(
             name="Dr. Test Author",
             institution="Test Institute",
@@ -57,6 +60,15 @@ def sample_questionnaire() -> Questionnaire:
                         text="Please share any additional comments.",
                         answer=AnswerConfig(type=AnswerType.FREETEXT),
                         required=False,
+                    ),
+                    Question(
+                        id="G.Q4",
+                        text="How would you rate the overall quality?",
+                        answer=AnswerConfig(
+                            type=AnswerType.CHOICES,
+                            choices_ref="satisfaction",
+                        ),
+                        required=True,
                     ),
                 ],
             ),

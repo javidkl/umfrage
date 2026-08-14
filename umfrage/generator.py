@@ -254,11 +254,12 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
 
             answer_cell = ws.cell(row=row, column=COL_ANSWER, value="")
             apply_answer_style(answer_cell, style)
-            pending_validations.append((answer_cell, q.answer))
+            resolved = questionnaire.resolved_choices(q.answer)
+            pending_validations.append((answer_cell, q.answer, resolved))
             if q.required:
                 required_answer_cells.append(answer_cell)
 
-            comment_text = _build_comment_text(q, translator)
+            comment_text = _build_comment_text(q, translator, resolved)
             comment_cell = ws.cell(row=row, column=COL_COMMENT, value=comment_text)
             apply_question_style(comment_cell, style, alternate)
             comment_cell.font = make_font(style.question_row, size_override=8)
@@ -273,19 +274,27 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
     _apply_required_formatting(ws, required_answer_cells)
 
 
-def _build_comment_text(q, translator: Translator) -> str:
+def _build_comment_text(q, translator: Translator, resolved_choices: list[str] | None = None) -> str:
     """Compose the Scale/Comment column text for a question."""
+    # An explicit comment is a complete override for all types, consistent with scale/yes_no/freetext.
     if q.comment:
         return q.comment
     ans = q.answer
     if ans.type == AnswerType.SCALE and ans.min_value is not None:
         if ans.description:
-            return f"[{ans.min_value}–{ans.max_value}]  {ans.description}"
+            return f"[{ans.min_value}\u2013{ans.max_value}]  {ans.description}"
         return translator.t("hint_scale", min=ans.min_value, max=ans.max_value)
     if ans.type == AnswerType.YES_NO:
         return ans.description or translator.t("hint_yesno")
     if ans.type == AnswerType.FREETEXT:
         return ans.description or translator.t("hint_freetext")
+    if ans.type == AnswerType.CHOICES:
+        if not ans.show_choices_in_comment or not resolved_choices:
+            return ans.description or ""
+        choices_str = ", ".join(resolved_choices)
+        if ans.description:
+            return f"{ans.description}\n{translator.t('hint_choices', choices=choices_str)}"
+        return translator.t("hint_choices", choices=choices_str)
     return ""
 
 
@@ -332,10 +341,13 @@ def _apply_consolidated_validations(
     multi-cell sqref) prevents Excel from re-merging duplicate entries when
     the file is resaved, which would otherwise cause cells to receive the
     wrong validation rule.
+
+    Each item in *pending* is a 3-tuple: (cell, answer_config, resolved_choices).
+    resolved_choices is a list[str] for CHOICES type, or None otherwise.
     """
     dv_map: dict[tuple, DataValidation] = {}
 
-    for cell, answer_config in pending:
+    for cell, answer_config, resolved_choices in pending:
         if answer_config.type == AnswerType.SCALE:
             if answer_config.min_value is None or answer_config.max_value is None:
                 continue
@@ -368,6 +380,23 @@ def _apply_consolidated_validations(
                     showErrorMessage=True,
                     errorTitle=translator.t("dv_error_title"),
                     error=translator.t("dv_yesno_error", yes=yes_val, no=no_val),
+                )
+                ws.add_data_validation(dv)
+                dv_map[key] = dv
+            dv_map[key].add(cell)
+
+        elif answer_config.type == AnswerType.CHOICES:
+            if not resolved_choices:
+                continue  # checker already flagged this; skip silently
+            key = ("choices", tuple(resolved_choices))
+            if key not in dv_map:
+                formula = '"' + ",".join(resolved_choices) + '"'
+                dv = DataValidation(
+                    type="list",
+                    formula1=formula,
+                    showErrorMessage=True,
+                    errorTitle=translator.t("dv_error_title"),
+                    error=translator.t("dv_choices_error"),
                 )
                 ws.add_data_validation(dv)
                 dv_map[key] = dv

@@ -33,7 +33,7 @@ def _fill_xlsx(path: Path, respondent: dict[str, str], answers: dict[str, object
 
 
 FULL_RESPONDENT = {"Name": "John Doe", "Institution": "Test University", "Email": "john@test.edu"}
-FULL_ANSWERS = {"G.Q1": 4, "G.Q2": "Yes", "G.Q3": "Great!", "T.Q1": 7}
+FULL_ANSWERS = {"G.Q1": 4, "G.Q2": "Yes", "G.Q3": "Great!", "G.Q4": "Good", "T.Q1": 7}
 
 
 class TestValidResponse:
@@ -283,3 +283,39 @@ class TestI18nValidation:
         _fill_xlsx(out, FULL_RESPONDENT, {**FULL_ANSWERS, "G.Q2": "No"})
         result = validate_response(out, q)
         assert not result.is_valid
+
+
+class TestChoicesValidation:
+    """Validate CHOICES answer type behaviour in returned xlsx files."""
+
+    def test_valid_choices_answer_passes(
+        self, generated_xlsx: Path, sample_questionnaire
+    ) -> None:
+        _fill_xlsx(generated_xlsx, FULL_RESPONDENT, FULL_ANSWERS)
+        result = validate_response(generated_xlsx, sample_questionnaire)
+        assert result.is_valid, result.errors
+
+    def test_invalid_choices_answer_fails(
+        self, generated_xlsx: Path, sample_questionnaire
+    ) -> None:
+        _fill_xlsx(generated_xlsx, FULL_RESPONDENT, {**FULL_ANSWERS, "G.Q4": "Outstanding"})
+        result = validate_response(generated_xlsx, sample_questionnaire)
+        assert not result.is_valid
+        assert any("G.Q4" in e for e in result.errors)
+
+    @pytest.mark.parametrize("val", ["good", "GOOD", "Good", "EXCELLENT", "excellent"])
+    def test_choices_validation_is_case_insensitive(
+        self, generated_xlsx: Path, sample_questionnaire, val: str
+    ) -> None:
+        _fill_xlsx(generated_xlsx, FULL_RESPONDENT, {**FULL_ANSWERS, "G.Q4": val})
+        result = validate_response(generated_xlsx, sample_questionnaire)
+        assert result.is_valid, f"'{val}' should be a valid choice (case-insensitive)"
+
+    def test_missing_required_choices_answer_fails(
+        self, generated_xlsx: Path, sample_questionnaire
+    ) -> None:
+        answers = {k: v for k, v in FULL_ANSWERS.items() if k != "G.Q4"}
+        _fill_xlsx(generated_xlsx, FULL_RESPONDENT, answers)
+        result = validate_response(generated_xlsx, sample_questionnaire)
+        assert not result.is_valid
+        assert any("G.Q4" in e for e in result.errors)

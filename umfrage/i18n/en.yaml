@@ -23,6 +23,8 @@ col_scale_comment: "Scale / Comment"
 hint_scale: "Scale: {min}–{max}"
 hint_yesno: "Enter: Yes or No"
 hint_freetext: "Free text"
+# {choices} is replaced with the comma-separated option list.
+hint_choices: "Options: {choices}"
 
 # ── Yes / No values ───────────────────────────────────────────────────────────
 # These strings are used both as the Excel dropdown options and as the accepted
@@ -37,6 +39,7 @@ hint_freetext: "Free text"
 dv_error_title: "Invalid value"
 dv_scale_error: "Please enter a whole number between {min} and {max}."
 dv_yesno_error: "Please select '{yes}' or '{no}' from the dropdown."
+dv_choices_error: "Please select one of the available options from the dropdown."
 
 # ── Result workbook labels ────────────────────────────────────────────────────
 result_title_suffix: "— Results"

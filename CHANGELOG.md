@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0] – 2026-08-14
+
+### Added
+- **`choices` answer type**: user-defined dropdown with an arbitrary list of
+  options (2–N items); Excel data-validation enforced identically to `yes_no`.
+- **`choice_lists` (top-level YAML key)**: define named option lists once and
+  reference them with `answer.choices_ref: <name>` in any number of questions.
+  One-off lists can still be defined inline with `answer.choices: [...]`.
+  Questions sharing the same resolved list receive a single consolidated
+  `DataValidation` object (same safe deferred-registration pattern as `yes_no`).
+- **`answer.show_choices_in_comment`** (default `true`): set to `false` to
+  suppress listing options in the Scale/Comment column when the list is long.
+- **CLI style auto-detection with feedback**: all three commands now print an
+  `[INFO]` line reporting which style source is used.
+  Priority order: explicit `--style PATH` → `style.yaml` in CWD → `config/style.yaml`
+  → built-in defaults.
+- New i18n keys in `en.yaml` / `de.yaml`: `hint_choices`, `dv_choices_error`.
+- Checker checks 11–16 covering the new `choices` constraints (missing source,
+  both sources set, unknown ref, <2 options, >255-char formula, duplicate options).
+- JSON Schema updated: `choices` type enum value, `choices`, `choices_ref`,
+  `show_choices_in_comment` properties in `answer`, `choice_lists` at root level.
+- Sample config (`config/questionnaire_sample.yaml`) extended with two
+  `choice_lists` entries and three `choices`-type questions demonstrating
+  `choices_ref`, inline `choices`, and `show_choices_in_comment: false`.
+- LLM guide (`docs/llm_guide.md`) updated with `§3.8 choice_lists`, `§4.4 choices`,
+  extended validation rules, worked example, and two new authoring tips.
+
+---
+
 ## [0.1.0] – 2026-08-11
 
 ### Added

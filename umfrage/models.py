@@ -20,6 +20,7 @@ class AnswerType(str, Enum):
     SCALE = "scale"
     YES_NO = "yes_no"
     FREETEXT = "freetext"
+    CHOICES = "choices"
 
 
 class AnswerConfig(BaseModel):
@@ -37,6 +38,28 @@ class AnswerConfig(BaseModel):
     description: str | None = Field(
         default=None,
         description="Optional hint text shown in the Excel comment/scale column.",
+    )
+    choices: list[str] | None = Field(
+        default=None,
+        description=(
+            "Inline list of options for CHOICES type. "
+            "Provide either this or choices_ref, not both."
+        ),
+    )
+    choices_ref: str | None = Field(
+        default=None,
+        description=(
+            "Name of a list defined in the questionnaire-level choice_lists dict. "
+            "Provide either this or choices, not both."
+        ),
+    )
+    show_choices_in_comment: bool = Field(
+        default=True,
+        description=(
+            "CHOICES type only. When false, the options are not listed in the "
+            "Scale/Comment column. Useful for long lists where the column would "
+            "become too wide. The description field (if set) is still shown."
+        ),
     )
 
 
@@ -99,9 +122,30 @@ class Questionnaire(BaseModel):
             "Add a YAML file to umfrage/i18n/ to register a new language."
         ),
     )
+    choice_lists: dict[str, list[str]] = Field(
+        default_factory=dict,
+        description=(
+            "Named reusable choice lists. Keys are arbitrary identifiers; values are "
+            "the list of option strings. Reference a list from a question with "
+            "answer.choices_ref: <name>. May also be defined inline per question with "
+            "answer.choices: [...]."
+        ),
+    )
     organizer: OrganizerInfo
     respondent_fields: list[RespondentField] = Field(min_length=1)
     sections: list[Section] = Field(min_length=1)
+
+    def resolved_choices(self, answer_config: AnswerConfig) -> list[str] | None:
+        """Return the resolved choice list for a CHOICES answer config.
+
+        Inline ``choices`` takes precedence over ``choices_ref``.
+        Returns ``None`` when neither is set or the ref key is unknown.
+        """
+        if answer_config.choices:
+            return answer_config.choices
+        if answer_config.choices_ref:
+            return self.choice_lists.get(answer_config.choices_ref)
+        return None
 
     def questionnaire_id(self) -> str:
         """Return a URL/filename-safe identifier derived from the title (max 50 chars)."""

@@ -281,3 +281,118 @@ class TestLanguageCheck:
         q = _base_questionnaire()
         assert q.language == "en"
         assert check_questionnaire(q).is_valid
+
+
+# ── helpers for choices tests ─────────────────────────────────────────────────
+
+def _make_choices_q(qid: str, choices=None, choices_ref=None) -> Question:
+    return Question(
+        id=qid,
+        text=f"Question {qid}",
+        answer=AnswerConfig(type=AnswerType.CHOICES, choices=choices, choices_ref=choices_ref),
+    )
+
+
+def _base_q_with_choices(**overrides) -> Questionnaire:
+    return _base_questionnaire(
+        choice_lists={"colors": ["Red", "Green", "Blue"]},
+        sections=[Section(title="S1", questions=[_make_choices_q("Q1", choices_ref="colors")])],
+        **overrides,
+    )
+
+
+class TestChoicesAnswers:
+    def test_valid_inline_choices_passes(self) -> None:
+        q = _base_questionnaire(
+            sections=[Section(title="S1", questions=[_make_choices_q("Q1", choices=["A", "B"])])]
+        )
+        assert check_questionnaire(q).is_valid
+
+    def test_valid_choices_ref_passes(self) -> None:
+        assert check_questionnaire(_base_q_with_choices()).is_valid
+
+    def test_missing_both_choices_and_ref_is_error(self) -> None:
+        q = _base_questionnaire(
+            sections=[Section(title="S1", questions=[_make_choices_q("Q1")])]
+        )
+        result = check_questionnaire(q)
+        assert not result.is_valid
+        assert any("choices" in e and "choices_ref" in e for e in result.errors)
+
+    def test_both_choices_and_ref_set_is_error(self) -> None:
+        q = _base_questionnaire(
+            choice_lists={"colors": ["Red", "Green"]},
+            sections=[Section(
+                title="S1",
+                questions=[_make_choices_q("Q1", choices=["A", "B"], choices_ref="colors")],
+            )],
+        )
+        result = check_questionnaire(q)
+        assert not result.is_valid
+        assert any("not both" in e for e in result.errors)
+
+    def test_unknown_choices_ref_is_error(self) -> None:
+        q = _base_questionnaire(
+            sections=[Section(title="S1", questions=[_make_choices_q("Q1", choices_ref="nonexistent")])]
+        )
+        result = check_questionnaire(q)
+        assert not result.is_valid
+        assert any("nonexistent" in e for e in result.errors)
+
+    def test_single_choice_is_error(self) -> None:
+        q = _base_questionnaire(
+            sections=[Section(title="S1", questions=[_make_choices_q("Q1", choices=["OnlyOne"])])]
+        )
+        result = check_questionnaire(q)
+        assert not result.is_valid
+        assert any("2" in e for e in result.errors)
+
+    def test_formula_exceeds_255_chars_is_error(self) -> None:
+        # 26 options each 10 chars long → joined = 285 chars
+        long_list = [f"Option_{i:04d}" for i in range(26)]
+        q = _base_questionnaire(
+            sections=[Section(title="S1", questions=[_make_choices_q("Q1", choices=long_list)])]
+        )
+        result = check_questionnaire(q)
+        assert not result.is_valid
+        assert any("255" in e for e in result.errors)
+
+    def test_duplicate_choices_is_warning_not_error(self) -> None:
+        q = _base_questionnaire(
+            sections=[Section(
+                title="S1",
+                questions=[_make_choices_q("Q1", choices=["Yes", "No", "yes"])],
+            )],
+        )
+        result = check_questionnaire(q)
+        assert result.is_valid  # duplicate is warning only
+        assert any("duplicate" in w.lower() for w in result.warnings)
+
+    def test_minmax_with_choices_is_warning_not_error(self) -> None:
+        q = _base_questionnaire(
+            sections=[Section(
+                title="S1",
+                questions=[Question(
+                    id="Q1",
+                    text="Q",
+                    answer=AnswerConfig(
+                        type=AnswerType.CHOICES, choices=["A", "B"],
+                        min_value=1, max_value=5,
+                    ),
+                )],
+            )],
+        )
+        result = check_questionnaire(q)
+        assert result.is_valid
+        assert any("CHOICES" in w for w in result.warnings)
+
+    def test_choices_ref_shares_same_dv_for_reuse(self) -> None:
+        """Two questions with same choices_ref should both pass validation."""
+        q = _base_questionnaire(
+            choice_lists={"tier": ["Basic", "Pro", "Enterprise"]},
+            sections=[Section(title="S1", questions=[
+                _make_choices_q("Q1", choices_ref="tier"),
+                _make_choices_q("Q2", choices_ref="tier"),
+            ])],
+        )
+        assert check_questionnaire(q).is_valid

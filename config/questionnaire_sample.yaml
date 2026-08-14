@@ -78,7 +78,40 @@ respondent_fields:
 #   scale    – integer in [min_value, max_value]; dropdown validates the range
 #   yes_no   – "Yes" or "No" dropdown; no min/max values needed
 #   freetext – any text; no data validation applied
+#   choices  – one of a fixed set of options; shown as a dropdown in Excel
+#              Define options inline with `choices: [...]`, or reference a
+#              named list from `choice_lists` (below) with `choices_ref: name`.
+#              `show_choices_in_comment: false` suppresses the auto-generated
+#              option list from column D. Only meaningful when no `comment` is
+#              set on the question (an explicit comment is always a complete
+#              override and already hides the list, making the flag redundant).
 # ─────────────────────────────────────────────────────────────────────────────
+
+# ── Reusable choice lists ─────────────────────────────────────────────────────
+#
+# Define named option lists here and reference them anywhere with
+# `choices_ref: <name>`. This avoids repeating the same list for several
+# questions. You can still define one-off lists inline per question.
+#
+# Rules:
+#   • At least 2 options per list.
+#   • The comma-joined options must not exceed 255 characters total
+#     (Excel data-validation formula limit). Shorten labels if needed.
+#   • Option strings must be unique within a list (case-insensitive).
+# ──────────────────────────────────────────────────────────────────────────────
+choice_lists:
+  frequency:
+    - "Never"
+    - "Rarely"
+    - "Sometimes"
+    - "Often"
+    - "Always"
+  satisfaction_level:
+    - "Very dissatisfied"
+    - "Dissatisfied"
+    - "Neutral"
+    - "Satisfied"
+    - "Very satisfied"
 
 sections:
   # ── Section 1: General Satisfaction ────────────────────────────────────────
@@ -107,6 +140,41 @@ sections:
           type: freetext
           description: "Free text, max. 3–4 sentences"
         required: false  # Optional — respondents may leave this blank
+
+      - id: "GEN.Q4"
+        text: "How would you describe the overall quality of the cooperation?"
+        answer:
+          type: choices
+          # Reference the named list defined in choice_lists above.
+          # All questions that share the same choices_ref will use a single
+          # dropdown rule in the Excel file (efficient and consistent).
+          choices_ref: satisfaction_level
+        required: true
+
+      - id: "GEN.Q5"
+        text: "How often did you exchange information with the project team?"
+        answer:
+          type: choices
+          choices_ref: frequency
+          # show_choices_in_comment: false suppresses the auto-generated option
+          # list in column D. Only useful here because no comment: is set;
+          # if a comment: were added instead, this flag would be redundant.
+          show_choices_in_comment: false
+          description: "Frequency of information exchange"
+        required: true
+
+      - id: "GEN.Q6"
+        text: "Which communication channel did you use most?"
+        answer:
+          type: choices
+          # Inline one-off list: no need to add it to choice_lists.
+          choices:
+            - "Email"
+            - "Video call"
+            - "In-person meeting"
+            - "Shared document platform"
+            - "Other"
+        required: false
 
   # ── Section 2: Technical Quality ───────────────────────────────────────────
   - title: "Technical Quality"

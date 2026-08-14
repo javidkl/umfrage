@@ -16,7 +16,8 @@ Licensed under the [Apache License 2.0](LICENSE).
 - **Config-driven**: questionnaires are fully described in YAML — no code required
 - **Protected Excel forms**: question cells are locked; only answer cells and
   respondent fields are editable; optional password protection
-- **Data validation**: dropdown lists for scale (1–N) and yes/no answers
+- **Data validation**: dropdown lists for scale (1–N), yes/no, and custom choices answers
+- **Choices type**: user-defined dropdown options; reusable named lists via `choice_lists` in the YAML
 - **Completeness check**: `umfrage validate` catches errors before generation
 - **Config-free collection**: companion `*_metadata.yaml` embeds the full model
   so `umfrage collect` works without the original config file
@@ -29,7 +30,7 @@ Licensed under the [Apache License 2.0](LICENSE).
 - **Interactive invalid-file handling**: `collect` prompts per-file when validation
   fails; user can include (filling missing answers with a configurable marker),
   skip, or bulk-decide with *All* / *None*
-- **Full test suite**: 171 unit tests via pytest
+- **Full test suite**: 189 unit tests via pytest
 
 ---
 
@@ -153,7 +154,7 @@ Validate a questionnaire YAML config for syntax and completeness.
 
 | Option | Description |
 |---|---|
-| `--style STYLE` | Path to `style.yaml` (optional) |
+| `--style STYLE` | Path to `style.yaml`. Auto-detected from `style.yaml` in CWD, then `config/style.yaml`; falls back to built-in defaults. |
 
 Exits with code **0** on success, **1** on error.
 
@@ -223,13 +224,23 @@ respondent_fields:
 # The collector uses it as the per-respondent column header in the result
 # spreadsheet.  If no such field exists it falls back to the first field.
 
+# Optional: define named option lists here and reference them with
+# choices_ref: <name> in any choices-type question.
+choice_lists:
+  satisfaction_level:
+    - "Very dissatisfied"
+    - "Dissatisfied"
+    - "Neutral"
+    - "Satisfied"
+    - "Very satisfied"
+
 sections:
   - title: "Section Name"
     questions:
       - id: "S1.Q1"             # unique, slug-safe
         text: "Question text"
         answer:
-          type: scale           # scale | yes_no | freetext
+          type: scale           # scale | yes_no | freetext | choices
           min_value: 1          # required for scale
           max_value: 5          # required for scale
           description: "1=poor, 5=excellent"  # optional hint
@@ -244,6 +255,7 @@ sections:
 | `scale` | Integer in `[min_value, max_value]` | Whole-number data validation |
 | `yes_no` | "Yes" or "No" | Dropdown list |
 | `freetext` | Any text | No validation, open cell |
+| `choices` | One of a user-defined option list | Dropdown list |
 
 **Question ID rules:** alphanumeric, dots, hyphens, underscores; must start and
 end with a letter or digit; globally unique across all sections.

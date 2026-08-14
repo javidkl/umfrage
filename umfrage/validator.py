@@ -140,6 +140,13 @@ def validate_response(path: Path, questionnaire: Questionnaire) -> ValidationRes
                 result.is_valid = False
 
     # Checks 5, 6, 7 — per-question answer validation
+    # Pre-resolve choices for all CHOICES questions in one pass.
+    resolved_choices_map: dict[str, list[str]] = {
+        q.id: resolved
+        for q in questionnaire.all_questions()
+        if (resolved := questionnaire.resolved_choices(q.answer)) is not None
+    }
+
     for q in questionnaire.all_questions():
         raw_value = result.answers.get(q.id)
         is_blank = raw_value is None or str(raw_value).strip() == ""
@@ -153,7 +160,10 @@ def validate_response(path: Path, questionnaire: Questionnaire) -> ValidationRes
                 result.is_valid = False
         else:
             # Check 6 — answer value within constraints
-            error = _validate_answer_value(q.id, raw_value, q.answer, translator)
+            error = _validate_answer_value(
+                q.id, raw_value, q.answer, translator,
+                choices=resolved_choices_map.get(q.id),
+            )
             if error:
                 result.errors.append(error)
                 result.is_valid = False
@@ -211,12 +221,19 @@ def _extract_answers(
             result.answers[qid] = answer_value
 
 
-def _validate_answer_value(qid: str, value: Any, answer_config, translator: Translator) -> str | None:
+def _validate_answer_value(
+    qid: str,
+    value: Any,
+    answer_config,
+    translator: Translator,
+    choices: list[str] | None = None,
+) -> str | None:
     """Validate a single answer value against its answer config.
 
     Returns an error message string, or ``None`` if the value is valid.
     Yes/No answers are validated against the language-specific strings
     provided by *translator* (case-insensitive).
+    Choices answers are validated against the *choices* list (case-insensitive).
     """
     if answer_config.type == AnswerType.SCALE:
         try:
@@ -241,6 +258,16 @@ def _validate_answer_value(qid: str, value: Any, answer_config, translator: Tran
                 f"Question '{qid}': expected '{yes_val}' or '{no_val}', "
                 f"got '{value}'."
             )
+
+    elif answer_config.type == AnswerType.CHOICES:
+        if choices:
+            valid_lower = {c.lower() for c in choices}
+            if str(value).strip().lower() not in valid_lower:
+                allowed = ", ".join(f"'{c}'" for c in choices)
+                return (
+                    f"Question '{qid}': '{value}' is not one of the allowed "
+                    f"choices ({allowed})."
+                )
 
     # FREETEXT: any non-empty string is valid (emptiness is checked by the caller)
     return None
