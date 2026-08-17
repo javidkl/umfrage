@@ -7,13 +7,17 @@ Public API
     embedded questionnaire identity (config hash), resolves the config for
     each group, and writes one ``results_*.xlsx`` per questionnaire found.
 
+:func:`list_questionnaire_groups`
+    Inspects a folder and returns one :class:`GroupInfo` per questionnaire
+    group found (read-only, no output files written).
+
 :func:`discover_questionnaire_groups`
     Groups ``.xlsx`` files in a folder by the ``config_hash`` stored in
     their hidden ``_meta`` sheet.
 
 :func:`resolve_config`
     Reconstructs a :class:`~umfrage.models.Questionnaire` for a given
-    ``config_hash`` by scanning ``*_metadata.yaml`` files or using a
+    ``config_hash`` by scanning ``*_metadata*.yaml`` files or using a
     caller-supplied override.
 
 :func:`collect_group`
@@ -78,18 +82,32 @@ class CollectionSummary:
     output_path: Path | None = None
 
 
+@dataclass
+class GroupInfo:
+    """Metadata describing one questionnaire group found in a folder."""
+
+    config_hash: str
+    questionnaire_id: str
+    title: str
+    file_count: int
+    config_file: str | None = None
+    files: list[Path] = field(default_factory=list)
+    unresolvable: bool = False
+
+
 def collect_all(
     folder: Path,
     style: StyleConfig,
     output_dir: Path,
     config_override: Questionnaire | None = None,
     on_invalid: Callable[[Path, list[str]], str] | None = None,
+    survey_filter: list[str] | None = None,
 ) -> list[CollectionSummary]:
     """Process all response files in *folder*, grouped by questionnaire identity.
 
     For each group of files sharing the same ``config_hash``:
 
-    1. Resolve the questionnaire config (from ``*_metadata.yaml`` or
+    1. Resolve the questionnaire config (from ``*_metadata*.yaml`` or
        *config_override*).
     2. Validate every file in the group.
     3. Aggregate valid responses into ``results_{qid}_{date}.xlsx`` in
@@ -97,7 +115,7 @@ def collect_all(
 
     Args:
         folder: Directory containing returned ``.xlsx`` files (and
-            optionally ``*_metadata.yaml`` files).
+            optionally ``*_metadata*.yaml`` files).
         style: Excel appearance and protection configuration.
         output_dir: Directory where result files are written.
         config_override: If supplied, this questionnaire is used for **all**
@@ -108,11 +126,24 @@ def collect_all(
             answers filled with :attr:`~umfrage.models.StyleConfig.missing_answer_marker`)
             or ``"skip"`` to discard it silently.  When *None* (default) all
             invalid files are skipped without prompting.
+        survey_filter: If supplied, only groups whose ``questionnaire_id()``
+            (slug) or ``config_hash`` prefix matches a token in this list are
+            processed.  Tokens of ≥8 hex chars are treated as hash prefixes;
+            all others are matched as slugs.  Pass ``None`` (default) to
+            process every group.  Ignored when *config_override* is given.
 
     Returns:
         A :class:`CollectionSummary` per questionnaire group found.
+
+    Raises:
+        ValueError: if a slug token in *survey_filter* matches more than one
+            group (title collision).  The user should re-run with a hash
+            prefix shown by ``umfrage list``.
     """
     groups = discover_questionnaire_groups(folder)
+
+    if survey_filter is not None:
+        groups = _apply_survey_filter(groups, folder, config_override, survey_filter)
     summaries: list[CollectionSummary] = []
 
     # Wrap the caller's callback so "all"/"none" decisions persist across groups.
@@ -156,6 +187,51 @@ def collect_all(
     return summaries
 
 
+def list_questionnaire_groups(
+    folder: Path,
+    config_override: Questionnaire | None = None,
+) -> list[GroupInfo]:
+    """Inspect *folder* and return one :class:`GroupInfo` per questionnaire group.
+
+    This is a read-only operation — no output files are written.  Groups whose
+    config cannot be resolved (missing metadata YAML, no *config_override*) are
+    still included, with ``unresolvable=True`` and placeholder id/title values.
+
+    Args:
+        folder: Directory containing returned ``.xlsx`` files.
+        config_override: If supplied, used for all groups instead of metadata
+            discovery.
+
+    Returns:
+        One :class:`GroupInfo` per ``config_hash`` group found, in sorted order.
+    """
+    raw_groups = discover_questionnaire_groups(folder)
+    result: list[GroupInfo] = []
+    for config_hash, paths in raw_groups.items():
+        config_file = _read_meta_value(paths[0], "config_file") if paths else None
+        try:
+            questionnaire = resolve_config(config_hash, folder, config_override)
+            result.append(GroupInfo(
+                config_hash=config_hash,
+                questionnaire_id=questionnaire.questionnaire_id(),
+                title=questionnaire.title,
+                file_count=len(paths),
+                config_file=config_file,
+                files=list(paths),
+            ))
+        except ConfigError:
+            result.append(GroupInfo(
+                config_hash=config_hash,
+                questionnaire_id=config_hash[:12] + "…",
+                title="(no metadata found)",
+                file_count=len(paths),
+                config_file=config_file,
+                files=list(paths),
+                unresolvable=True,
+            ))
+    return result
+
+
 def discover_questionnaire_groups(folder: Path) -> dict[str, list[Path]]:
     """Scan *folder* for response ``.xlsx`` files and group by ``config_hash``.
 
@@ -196,7 +272,7 @@ def resolve_config(
 
     1. *config_override* — used as-is (hash is not checked against it so
        that manually supplied configs always win).
-    2. ``*_metadata.yaml`` files in *folder* whose embedded ``config_hash``
+    2. ``*_metadata*.yaml`` files in *folder* whose embedded ``config_hash``
        matches.
 
     Raises:
@@ -205,7 +281,7 @@ def resolve_config(
     if config_override is not None:
         return config_override
 
-    for metadata_path in sorted(folder.glob("*_metadata.yaml")):
+    for metadata_path in sorted(folder.glob("*_metadata*.yaml")):
         try:
             data = yaml.safe_load(metadata_path.read_text(encoding="utf-8"))
         except Exception:
@@ -223,7 +299,7 @@ def resolve_config(
     raise ConfigError(
         f"No questionnaire config found for hash {config_hash[:12]}…  "
         "Either run 'umfrage generate --metadata-file' to create a "
-        "*_metadata.yaml companion file, or pass --config."
+        "*_metadata*.yaml companion file, or pass --config."
     )
 
 
@@ -297,6 +373,61 @@ def collect_group(
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
+def _looks_like_hash_prefix(token: str) -> bool:
+    """Return True if *token* could be a config_hash prefix (≥8 hex chars)."""
+    return len(token) >= 8 and all(c in "0123456789abcdefABCDEF" for c in token)
+
+
+def _apply_survey_filter(
+    groups: dict[str, list[Path]],
+    folder: Path,
+    config_override: Questionnaire | None,
+    survey_filter: list[str],
+) -> dict[str, list[Path]]:
+    """Return a filtered subset of *groups* whose identities match *survey_filter*.
+
+    Hash-prefix tokens (≥8 hex chars) match ``config_hash`` directly.
+    Slug tokens match ``questionnaire_id()``.  A slug that maps to more than
+    one group raises :exc:`ValueError` — the user must disambiguate with a
+    hash prefix (shown by ``umfrage list``).
+    """
+    hash_to_qid: dict[str, str] = {}
+    for config_hash in groups:
+        try:
+            q = resolve_config(config_hash, folder, config_override)
+            hash_to_qid[config_hash] = q.questionnaire_id()
+        except ConfigError:
+            hash_to_qid[config_hash] = ""
+
+    matched: set[str] = set()
+
+    for token in survey_filter:
+        if _looks_like_hash_prefix(token):
+            found = [h for h in groups if h.startswith(token)]
+            if not found:
+                print(f"[WARNING] --survey '{token}': no group with this hash prefix.")
+            matched.update(found)
+        else:
+            slug_matches = [h for h, qid in hash_to_qid.items() if qid == token]
+            if not slug_matches:
+                print(f"[WARNING] --survey '{token}': no group with this ID (slug).")
+            elif len(slug_matches) > 1:
+                hints = ", ".join(h[:12] + "\u2026" for h in sorted(slug_matches))
+                raise ValueError(
+                    f"--survey '{token}' is ambiguous: {len(slug_matches)} groups share "
+                    f"this ID. Use a hash prefix instead "
+                    f"(run 'umfrage list' to see them): {hints}"
+                )
+            else:
+                matched.update(slug_matches)
+
+    for config_hash in set(groups) - matched:
+        label = hash_to_qid.get(config_hash) or config_hash[:12] + "\u2026"
+        print(f"[INFO] Skipping '{label}' (not matched by --survey filter).")
+
+    return {h: groups[h] for h in groups if h in matched}
+
+
 def _apply_missing_marker(
     vr: ValidationResult,
     questionnaire: Questionnaire,
@@ -316,13 +447,18 @@ def _apply_missing_marker(
 
 def _read_config_hash(xlsx_path: Path) -> str | None:
     """Safely read the ``config_hash`` value from a response file's ``_meta`` sheet."""
+    return _read_meta_value(xlsx_path, "config_hash")
+
+
+def _read_meta_value(xlsx_path: Path, key: str) -> str | None:
+    """Safely read one *key* value from a response file's ``_meta`` sheet."""
     try:
         wb = load_workbook(xlsx_path, read_only=True, data_only=True)
         if META_SHEET not in wb.sheetnames:
             return None
         ws_meta = wb[META_SHEET]
         for row in ws_meta.iter_rows(max_col=2, values_only=True):
-            if row[0] == "config_hash":
+            if row[0] == key:
                 return str(row[1]) if row[1] else None
         return None
     except Exception:

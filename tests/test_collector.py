@@ -10,9 +10,11 @@ from openpyxl import load_workbook
 
 from umfrage.collector import (
     CollectionSummary,
+    GroupInfo,
     collect_all,
     collect_group,
     discover_questionnaire_groups,
+    list_questionnaire_groups,
     resolve_config,
 )
 from umfrage.config_loader import ConfigError
@@ -78,33 +80,6 @@ def responses_folder(
     return folder
 
 
-@pytest.fixture()
-def other_questionnaire() -> Questionnaire:
-    """A second questionnaire with a different config hash."""
-    return Questionnaire(
-        title="Other Survey",
-        organizer=OrganizerInfo(name="Bob", institution="Org2", email="b@org2.com"),
-        respondent_fields=[
-            RespondentField(label="Name"),
-            RespondentField(label="Institution"),
-        ],
-        sections=[
-            Section(
-                title="Feedback",
-                questions=[
-                    Question(
-                        id="F.Q1",
-                        text="Overall rating",
-                        answer=AnswerConfig(
-                            type=AnswerType.SCALE, min_value=1, max_value=3
-                        ),
-                    )
-                ],
-            )
-        ],
-    )
-
-
 # ── discover_questionnaire_groups ─────────────────────────────────────────────
 
 class TestDiscoverGroups:
@@ -146,6 +121,18 @@ class TestResolveConfig:
     ) -> None:
         q = resolve_config(sample_questionnaire.config_hash(), responses_folder)
         assert q.title == sample_questionnaire.title
+        assert q.config_hash() == sample_questionnaire.config_hash()
+
+    def test_resolves_from_timestamped_metadata_yaml(
+        self, tmp_path: Path, sample_questionnaire: Questionnaire, sample_style
+    ) -> None:
+        """CLI writes *_metadata_TIMESTAMP.yaml; resolve_config must find it."""
+        folder = tmp_path / "ts"
+        folder.mkdir()
+        # Write the metadata file with a timestamp suffix, as the CLI does.
+        ts_meta = folder / f"{sample_questionnaire.questionnaire_id()}_metadata_20260814_122339.yaml"
+        write_metadata_file(sample_questionnaire, ts_meta)
+        q = resolve_config(sample_questionnaire.config_hash(), folder)
         assert q.config_hash() == sample_questionnaire.config_hash()
 
     def test_config_override_takes_precedence(
@@ -662,4 +649,224 @@ class TestForceInclude:
         assert call_count[0] == 1
         assert s.skipped_count == 2
         assert s.force_included_count == 0
+
+
+# ── list_questionnaire_groups ─────────────────────────────────────────────────
+
+class TestListQuestionnaireGroups:
+    def test_single_group_returned(
+        self, responses_folder: Path, sample_questionnaire: Questionnaire
+    ) -> None:
+        groups = list_questionnaire_groups(responses_folder)
+        assert len(groups) == 1
+        g = groups[0]
+        assert isinstance(g, GroupInfo)
+        assert g.questionnaire_id == sample_questionnaire.questionnaire_id()
+        assert g.title == sample_questionnaire.title
+        assert g.file_count == 2
+        assert len(g.files) == 2
+        assert not g.unresolvable
+
+    def test_two_groups_returned(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        other_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        folder = tmp_path / "mixed"
+        folder.mkdir()
+        for q_obj, answers in [
+            (sample_questionnaire, SAMPLE_ANSWERS),
+            (other_questionnaire, {"F.Q1": 2}),
+        ]:
+            base = tmp_path / f"base_{q_obj.questionnaire_id()}.xlsx"
+            generate_questionnaire(q_obj, sample_style, base)
+            write_metadata_file(q_obj, folder / f"{q_obj.questionnaire_id()}_metadata.yaml")
+            resp = folder / f"resp_{q_obj.questionnaire_id()}.xlsx"
+            shutil.copy(base, resp)
+            _fill_response(resp, "Tester", "Org", answers)
+
+        groups = list_questionnaire_groups(folder)
+        assert len(groups) == 2
+        ids = {g.questionnaire_id for g in groups}
+        assert sample_questionnaire.questionnaire_id() in ids
+        assert other_questionnaire.questionnaire_id() in ids
+
+    def test_unresolvable_group(
+        self, tmp_path: Path, sample_questionnaire: Questionnaire, sample_style
+    ) -> None:
+        folder = tmp_path / "no_meta"
+        folder.mkdir()
+        base = tmp_path / "base.xlsx"
+        generate_questionnaire(sample_questionnaire, sample_style, base)
+        # Intentionally skip write_metadata_file so config cannot be resolved.
+        resp = folder / "resp.xlsx"
+        shutil.copy(base, resp)
+        _fill_response(resp, "Anon", "Org", SAMPLE_ANSWERS)
+
+        groups = list_questionnaire_groups(folder)
+        assert len(groups) == 1
+        assert groups[0].unresolvable is True
+        assert groups[0].file_count == 1
+
+    def test_empty_folder_returns_empty(self, tmp_path: Path) -> None:
+        folder = tmp_path / "empty"
+        folder.mkdir()
+        assert list_questionnaire_groups(folder) == []
+
+    def test_config_file_populated_when_in_meta(
+        self, tmp_path: Path, sample_questionnaire: Questionnaire, sample_style
+    ) -> None:
+        folder = tmp_path / "r"
+        folder.mkdir()
+        base = tmp_path / "base.xlsx"
+        generate_questionnaire(sample_questionnaire, sample_style, base, config_file="survey.yaml")
+        write_metadata_file(
+            sample_questionnaire,
+            folder / f"{sample_questionnaire.questionnaire_id()}_metadata.yaml",
+        )
+        resp = folder / "resp.xlsx"
+        shutil.copy(base, resp)
+
+        groups = list_questionnaire_groups(folder)
+        assert groups[0].config_file == "survey.yaml"
+
+    def test_config_file_none_when_not_in_meta(self, responses_folder: Path) -> None:
+        # responses_folder uses generate_questionnaire without config_file argument
+        groups = list_questionnaire_groups(responses_folder)
+        assert groups[0].config_file is None
+
+    def test_config_override_resolves_without_yaml(
+        self, tmp_path: Path, sample_questionnaire: Questionnaire, sample_style
+    ) -> None:
+        folder = tmp_path / "no_meta"
+        folder.mkdir()
+        base = tmp_path / "base.xlsx"
+        generate_questionnaire(sample_questionnaire, sample_style, base)
+        resp = folder / "resp.xlsx"
+        shutil.copy(base, resp)
+
+        groups = list_questionnaire_groups(folder, config_override=sample_questionnaire)
+        assert len(groups) == 1
+        assert not groups[0].unresolvable
+        assert groups[0].title == sample_questionnaire.title
+
+
+# ── survey_filter ─────────────────────────────────────────────────────────────
+
+class TestSurveyFilter:
+    """Tests for the survey_filter parameter of collect_all()."""
+
+    def _mixed_folder(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        other_questionnaire: Questionnaire,
+        sample_style,
+    ) -> Path:
+        folder = tmp_path / "mixed"
+        folder.mkdir()
+        for q_obj, answers in [
+            (sample_questionnaire, SAMPLE_ANSWERS),
+            (other_questionnaire, {"F.Q1": 2}),
+        ]:
+            base = tmp_path / f"base_{q_obj.questionnaire_id()}.xlsx"
+            generate_questionnaire(q_obj, sample_style, base)
+            write_metadata_file(q_obj, folder / f"{q_obj.questionnaire_id()}_metadata.yaml")
+            resp = folder / f"resp_{q_obj.questionnaire_id()}.xlsx"
+            shutil.copy(base, resp)
+            _fill_response(resp, "Tester", "Org", answers)
+        return folder
+
+    def test_filter_by_slug_selects_one_group(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        other_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        folder = self._mixed_folder(tmp_path, sample_questionnaire, other_questionnaire, sample_style)
+        out_dir = tmp_path / "out"
+        summaries = collect_all(
+            folder, sample_style, out_dir,
+            survey_filter=[sample_questionnaire.questionnaire_id()],
+        )
+        assert len(summaries) == 1
+        assert summaries[0].questionnaire_id == sample_questionnaire.questionnaire_id()
+
+    def test_filter_by_hash_prefix_selects_one_group(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        other_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        folder = self._mixed_folder(tmp_path, sample_questionnaire, other_questionnaire, sample_style)
+        # Use the first 12 chars of the hash — should match exactly one group.
+        hash_prefix = sample_questionnaire.config_hash()[:12]
+        out_dir = tmp_path / "out"
+        summaries = collect_all(
+            folder, sample_style, out_dir,
+            survey_filter=[hash_prefix],
+        )
+        assert len(summaries) == 1
+        assert summaries[0].questionnaire_id == sample_questionnaire.questionnaire_id()
+
+    def test_filter_unknown_token_produces_no_summaries(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        other_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        folder = self._mixed_folder(tmp_path, sample_questionnaire, other_questionnaire, sample_style)
+        out_dir = tmp_path / "out"
+        summaries = collect_all(
+            folder, sample_style, out_dir,
+            survey_filter=["nonexistent-survey-slug"],
+        )
+        assert summaries == []
+
+    def test_no_filter_processes_all_groups(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        other_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        folder = self._mixed_folder(tmp_path, sample_questionnaire, other_questionnaire, sample_style)
+        out_dir = tmp_path / "out"
+        summaries = collect_all(folder, sample_style, out_dir)
+        assert len(summaries) == 2
+
+    def test_slug_collision_raises_value_error(
+        self,
+        tmp_path: Path,
+        sample_questionnaire: Questionnaire,
+        sample_style,
+    ) -> None:
+        """Two surveys with identical titles produce the same slug; filter must error."""
+        folder = tmp_path / "collision"
+        folder.mkdir()
+
+        # Clone sample_questionnaire with a different version (different hash, same slug).
+        twin = sample_questionnaire.model_copy(update={"version": "2.0"})
+        assert twin.questionnaire_id() == sample_questionnaire.questionnaire_id()
+        assert twin.config_hash() != sample_questionnaire.config_hash()
+
+        for q_obj in (sample_questionnaire, twin):
+            base = tmp_path / f"base_{q_obj.config_hash()[:8]}.xlsx"
+            generate_questionnaire(q_obj, sample_style, base)
+            write_metadata_file(q_obj, folder / f"{q_obj.config_hash()[:8]}_metadata.yaml")
+            resp = folder / f"resp_{q_obj.config_hash()[:8]}.xlsx"
+            shutil.copy(base, resp)
+            _fill_response(resp, "User", "Org", SAMPLE_ANSWERS)
+
+        out_dir = tmp_path / "out"
+        with pytest.raises(ValueError, match="ambiguous"):
+            collect_all(
+                folder, sample_style, out_dir,
+                survey_filter=[sample_questionnaire.questionnaire_id()],
+            )
 

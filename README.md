@@ -175,6 +175,20 @@ re-running `generate` never overwrites a previous result.
 
 ---
 
+### `umfrage list RESPONSES_DIR`
+
+List questionnaire groups found in a folder without processing them.
+
+| Option | Description |
+|---|---|
+| `--config CONFIG` | Path to questionnaire YAML for resolving group titles and IDs |
+
+Prints one row per questionnaire group with its **ID (slug)**, **title**,
+**config hash prefix**, and **file count**.  Use the ID or hash prefix with
+`umfrage collect --survey` to process only selected groups.
+
+---
+
 ### `umfrage collect RESPONSES_DIR`
 
 Collect and aggregate returned files into result spreadsheets.
@@ -185,13 +199,15 @@ Collect and aggregate returned files into result spreadsheets.
 | `--style STYLE` | Path to `style.yaml` |
 | `--output-dir DIR` | Output directory (default: same as `RESPONSES_DIR`) |
 | `--skip-invalid` | Silently skip invalid files instead of prompting (CI-friendly) |
+| `--survey TOKEN` | Process only the group matching TOKEN (slug or hash prefix ≥8 hex chars); repeat for multiple groups. Run `umfrage list` first to discover available IDs. Ignored when `--config` is given. |
 
 When a response file fails validation the tool pauses and asks whether to
 include or skip it.  Missing answers in force-included files are replaced by
 the `missing_answer_marker` (default `XXXXX`) and highlighted.
 
 Multiple questionnaires in one folder are handled automatically — one
-`results_*.xlsx` is produced per questionnaire group found.
+`results_*.xlsx` is produced per questionnaire group found.  Use
+`umfrage list` to preview groups and `--survey` to select a subset.
 
 ---
 

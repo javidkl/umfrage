@@ -95,6 +95,33 @@ def sample_style() -> StyleConfig:
 
 
 @pytest.fixture()
+def other_questionnaire() -> Questionnaire:
+    """A second questionnaire with a different config hash."""
+    return Questionnaire(
+        title="Other Survey",
+        organizer=OrganizerInfo(name="Bob", institution="Org2", email="b@org2.com"),
+        respondent_fields=[
+            RespondentField(label="Name"),
+            RespondentField(label="Institution"),
+        ],
+        sections=[
+            Section(
+                title="Feedback",
+                questions=[
+                    Question(
+                        id="F.Q1",
+                        text="Overall rating",
+                        answer=AnswerConfig(
+                            type=AnswerType.SCALE, min_value=1, max_value=3
+                        ),
+                    )
+                ],
+            )
+        ],
+    )
+
+
+@pytest.fixture()
 def generated_xlsx(
     tmp_path: Path,
     sample_questionnaire: Questionnaire,

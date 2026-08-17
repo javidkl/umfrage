@@ -91,6 +91,18 @@ class TestMetaSheet:
         meta = self._read_meta(generated_xlsx)
         assert meta.get("project_url") == "https://github.com/scinnod/umfrage"
 
+    def test_meta_has_config_file_when_passed(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        out = tmp_path / "q.xlsx"
+        generate_questionnaire(sample_questionnaire, sample_style, out, config_file="my-survey.yaml")
+        meta = self._read_meta(out)
+        assert meta.get("config_file") == "my-survey.yaml"
+
+    def test_meta_config_file_absent_when_not_passed(self, generated_xlsx: Path) -> None:
+        meta = self._read_meta(generated_xlsx)
+        assert "config_file" not in meta
+
     def test_meta_sheet_is_protected(self, generated_xlsx: Path) -> None:
         wb = load_workbook(generated_xlsx)
         assert wb["_meta"].protection.sheet is True

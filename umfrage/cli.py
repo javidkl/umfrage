@@ -26,7 +26,7 @@ from typing import Callable
 import click
 
 from umfrage.checker import check_questionnaire
-from umfrage.collector import collect_all
+from umfrage.collector import GroupInfo, collect_all, list_questionnaire_groups
 from umfrage.config_loader import ConfigError, load_questionnaire, load_style
 from umfrage.generator import generate_questionnaire, write_metadata_file
 from umfrage.models import StyleConfig
@@ -217,7 +217,7 @@ def cmd_generate(
     xlsx_path = out_dir / f"{qid}_questionnaire_{timestamp}.xlsx"
 
     try:
-        generate_questionnaire(questionnaire, style, xlsx_path)
+        generate_questionnaire(questionnaire, style, xlsx_path, config_file=config.name)
     except Exception as exc:
         click.echo(f"[ERROR] Failed to generate Excel file: {exc}", err=True)
         sys.exit(1)
@@ -233,7 +233,85 @@ def cmd_generate(
             click.echo(f"[WARNING] Could not write metadata file: {exc}")
 
 
-# ── collect helpers ───────────────────────────────────────────────────────────
+# ── list ─────────────────────────────────────────────────────────────────────
+
+@main.command("list")
+@click.argument(
+    "responses_dir",
+    metavar="RESPONSES_DIR",
+    type=click.Path(exists=True, file_okay=False, path_type=Path),
+)
+@click.option(
+    "--config", "config_path",
+    metavar="CONFIG",
+    type=click.Path(exists=True, dir_okay=False, path_type=Path),
+    default=None,
+    help="Path to questionnaire YAML for resolving group titles and IDs.",
+)
+@click.option(
+    "--files", "-f",
+    "show_files",
+    is_flag=True,
+    default=False,
+    help="List individual response filenames under each group.",
+)
+def cmd_list(responses_dir: Path, config_path: Path | None, show_files: bool) -> None:
+    """List questionnaire groups found in RESPONSES_DIR without collecting.
+
+    RESPONSES_DIR is the folder containing returned .xlsx files.
+
+    Prints one row per questionnaire group with its ID (slug), title, and
+    config hash prefix.  Use the ID or hash prefix with
+    'umfrage collect --survey TOKEN' to process only selected groups.
+    """
+    config_override = None
+    if config_path:
+        try:
+            config_override = load_questionnaire(config_path)
+        except ConfigError as exc:
+            click.echo(f"[ERROR] {exc}", err=True)
+            sys.exit(1)
+
+    groups: list[GroupInfo] = list_questionnaire_groups(responses_dir, config_override)
+
+    if not groups:
+        click.echo("[INFO] No questionnaire response files found.")
+        return
+
+    # Dynamic column widths — slugs never truncated; titles/config capped.
+    _TITLE_MAX = 48
+    _CFG_MAX = 32
+    _HASH_W = 13  # "xxxxxxxxxxxx…"
+    cfg_w = max(len("Config file"), min(_CFG_MAX, max(len(g.config_file or "-") for g in groups)))
+    id_w = max(len("ID (slug)"), max(len(g.questionnaire_id) for g in groups))
+    title_w = max(len("Title"), min(_TITLE_MAX, max(len(g.title) for g in groups)))
+
+    click.echo(f"Found {len(groups)} questionnaire group(s) in '{responses_dir}':\n")
+    click.echo(
+        f"  {'#':<4}  {'Config file':<{cfg_w}}  {'ID (slug)':<{id_w}}  "
+        f"{'Title':<{title_w}}  {'Hash prefix':<{_HASH_W}}  Files"
+    )
+    click.echo("  " + "-" * (4 + 2 + cfg_w + 2 + id_w + 2 + title_w + 2 + _HASH_W + 2 + 5))
+    for i, g in enumerate(groups, start=1):
+        cfg_val = g.config_file or "-"
+        cfg_display = cfg_val if len(cfg_val) <= cfg_w else cfg_val[:cfg_w - 1] + "…"
+        title_display = (
+            g.title if len(g.title) <= title_w else g.title[:title_w - 1] + "…"
+        )
+        flag = "  [!] no metadata" if g.unresolvable else ""
+        click.echo(
+            f"  {i:<4}  {cfg_display:<{cfg_w}}  {g.questionnaire_id:<{id_w}}  "
+            f"{title_display:<{title_w}}  {g.config_hash[:12]}…  {g.file_count}{flag}"
+        )
+        if show_files:
+            for fp in g.files:
+                click.echo(f"         {fp.name}")
+
+    if not show_files:
+        click.echo("\n  Tip: run with --files (-f) to list individual response filenames.")
+
+
+# ── collect helpers ──────────────────────────────────────────────────────────
 
 def _make_invalid_prompt() -> Callable[[Path, list[str]], str]:
     """Return a stateful interactive callback for handling invalid files.
@@ -338,12 +416,25 @@ def _make_invalid_prompt() -> Callable[[Path, list[str]], str]:
         "Useful for non-interactive/CI use."
     ),
 )
+@click.option(
+    "--survey",
+    "survey_filter",
+    metavar="TOKEN",
+    multiple=True,
+    help=(
+        "Process only the group matching TOKEN. TOKEN may be the questionnaire "
+        "ID (slug) or a config hash prefix (\u22658 hex chars, shown by 'umfrage list'). "
+        "Repeat to include multiple groups. "
+        "Ignored when --config is given."
+    ),
+)
 def cmd_collect(
     responses_dir: Path,
     config_path: Path | None,
     style_path: Path | None,
     output_dir: Path | None,
     skip_invalid: bool,
+    survey_filter: tuple[str, ...],
 ) -> None:
     """Collect and aggregate returned questionnaire files into result spreadsheets.
 
@@ -379,8 +470,26 @@ def cmd_collect(
     out_dir = output_dir or responses_dir
     on_invalid = None if skip_invalid else _make_invalid_prompt()
 
+    # --survey is meaningless when --config maps every group to one fixed config.
+    effective_survey_filter: list[str] | None = None
+    if survey_filter:
+        if config_override is not None:
+            click.echo(
+                "[INFO] --survey is ignored when --config is given "
+                "(all groups use the supplied config)."
+            )
+        else:
+            effective_survey_filter = list(survey_filter)
+
     try:
-        summaries = collect_all(responses_dir, style, out_dir, config_override, on_invalid=on_invalid)
+        summaries = collect_all(
+            responses_dir, style, out_dir, config_override,
+            on_invalid=on_invalid,
+            survey_filter=effective_survey_filter,
+        )
+    except ValueError as exc:
+        click.echo(f"[ERROR] {exc}", err=True)
+        sys.exit(1)
     except Exception as exc:
         click.echo(f"[ERROR] Collection failed unexpectedly: {exc}", err=True)
         sys.exit(1)

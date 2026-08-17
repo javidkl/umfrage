@@ -71,6 +71,7 @@ def generate_questionnaire(
     questionnaire: Questionnaire,
     style: StyleConfig,
     output_path: Path,
+    config_file: str | None = None,
 ) -> Path:
     """Generate a protected Excel questionnaire file.
 
@@ -87,6 +88,8 @@ def generate_questionnaire(
         questionnaire: Validated questionnaire model.
         style: Excel styling and protection configuration.
         output_path: Destination path for the ``.xlsx`` file.
+        config_file: Filename (not full path) of the source questionnaire YAML,
+            stored in the ``_meta`` sheet for traceability.
 
     Returns:
         *output_path* after the file has been written.
@@ -97,7 +100,7 @@ def generate_questionnaire(
 
     translator = Translator(questionnaire.language)
     _build_questionnaire_sheet(ws, questionnaire, style, translator)
-    _build_meta_sheet(wb, questionnaire)
+    _build_meta_sheet(wb, questionnaire, config_file)
     _apply_sheet_protection(ws, style)
     _apply_sheet_protection(wb["_meta"], style)
 
@@ -429,7 +432,7 @@ def _apply_consolidated_validations(
         # FREETEXT: no data validation added; any text is accepted.
 
 
-def _build_meta_sheet(wb: Workbook, questionnaire: Questionnaire) -> None:
+def _build_meta_sheet(wb: Workbook, questionnaire: Questionnaire, config_file: str | None = None) -> None:
     """Create the hidden '_meta' sheet with structural metadata."""
     ws_meta = wb.create_sheet(title="_meta")
     ws_meta.sheet_state = "hidden"
@@ -447,6 +450,8 @@ def _build_meta_sheet(wb: Workbook, questionnaire: Questionnaire) -> None:
         ("questionnaire_json", questionnaire.model_dump_json()),
         ("project_url", "https://github.com/scinnod/umfrage"),
     ]
+    if config_file is not None:
+        rows.append(("config_file", config_file))
     for row_idx, (key, value) in enumerate(rows, start=1):
         ws_meta.cell(row=row_idx, column=1, value=key)
         ws_meta.cell(row=row_idx, column=2, value=value)

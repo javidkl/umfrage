@@ -7,6 +7,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0] – 2026-08-17
+
+### Added
+- **`umfrage list RESPONSES_DIR`** — new read-only subcommand that scans a
+  folder and prints a table of all questionnaire groups found (ID slug, title,
+  config hash prefix, file count) without writing any output files.  Use it
+  to discover what is in a folder before running `umfrage collect`.
+- **`umfrage collect --survey TOKEN`** — optional filter flag (repeatable) that
+  restricts collection to groups whose questionnaire ID (slug) or config hash
+  prefix matches TOKEN.  Passing a slug that maps to more than one group
+  (title collision) is a hard error with a hint to use the hash prefix shown
+  by `umfrage list`.  Ignored when `--config` is also given.
+- `GroupInfo` dataclass and `list_questionnaire_groups()` function added to
+  the public API of `umfrage.collector`.
+
+### Fixed
+- **`umfrage collect` could not auto-discover metadata for most generated
+  questionnaires**: `resolve_config()` scanned for `*_metadata.yaml` but
+  `umfrage generate` writes `*_metadata_{timestamp}.yaml`.  The glob is now
+  `*_metadata*.yaml`, which matches both the timestamped CLI output and the
+  old timestamp-free format used in tests and manual workflows.
+
+---
+
 ## [0.2.1] – 2026-08-17
 
 ### Added
