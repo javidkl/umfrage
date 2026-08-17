@@ -30,7 +30,7 @@ Licensed under the [Apache License 2.0](LICENSE).
 - **Interactive invalid-file handling**: `collect` prompts per-file when validation
   fails; user can include (filling missing answers with a configurable marker),
   skip, or bulk-decide with *All* / *None*
-- **Full test suite**: 189 unit tests via pytest
+- **Full test suite**: 228 unit tests via pytest (as of 2026-08-17)
 
 ---
 
@@ -306,22 +306,25 @@ All color values are 6-digit hex codes **without** a `#`.
 ```
 umfrage/
 ├── umfrage/
-│   ├── cli.py            CLI entry point (validate, generate, collect)
+│   ├── cli.py            CLI entry point (validate, generate, collect, list)
 │   ├── models.py         Pydantic domain models
 │   ├── config_loader.py  YAML loading and Pydantic validation
-│   ├── checker.py        Completeness checks (9 rules)
+│   ├── checker.py        Completeness checks (16 rules)
 │   ├── generator.py      Excel questionnaire generation
 │   ├── validator.py      Returned file validation
 │   ├── collector.py      Multi-questionnaire aggregation
-│   └── styles.py         openpyxl styling helpers
+│   ├── translator.py     i18n string lookup
+│   ├── styles.py         openpyxl styling helpers
+│   └── i18n/             Translation files (en.yaml, de.yaml)
 ├── config/
 │   ├── questionnaire_sample.yaml  Annotated template (tracked)
 │   └── style.yaml                 Appearance config (tracked)
 ├── docs/
 │   ├── llm_guide.md               AI/LLM authoring guide
 │   └── questionnaire.schema.json  JSON Schema for IDE validation
-├── tests/                         pytest test suite (171 tests)
+├── tests/                         pytest test suite (228 tests, as of 2026-08-17)
 ├── pyproject.toml
+├── COLLABORATORS.md               Project contributors
 ├── LICENSE                        Apache 2.0
 └── CHANGELOG.md
 ```
