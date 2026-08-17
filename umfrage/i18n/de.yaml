@@ -51,3 +51,6 @@ result_col_qid: "F-Nr."
 result_col_question: "Frage"
 result_col_scale_comment: "Skala / Kommentar"
 result_col_source_file: "Quelldatei"
+
+# ── Fußzeile ─────────────────────────────────────────────────────────────────
+footer_generated_with: "Erzeugt mit umfrage"

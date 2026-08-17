@@ -50,3 +50,6 @@ result_col_qid: "Q-ID"
 result_col_question: "Question"
 result_col_scale_comment: "Scale / Comment"
 result_col_source_file: "Source file"
+
+# ── Footer row ───────────────────────────────────────────────────────────────
+footer_generated_with: "Generated with umfrage"

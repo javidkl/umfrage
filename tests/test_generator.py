@@ -87,6 +87,67 @@ class TestMetaSheet:
         meta = self._read_meta(generated_xlsx)
         assert meta["version"] == sample_questionnaire.version
 
+    def test_meta_has_project_url(self, generated_xlsx: Path) -> None:
+        meta = self._read_meta(generated_xlsx)
+        assert meta.get("project_url") == "https://github.com/scinnod/umfrage"
+
+    def test_meta_sheet_is_protected(self, generated_xlsx: Path) -> None:
+        wb = load_workbook(generated_xlsx)
+        assert wb["_meta"].protection.sheet is True
+
+    def test_meta_sheet_password_matches_questionnaire(
+        self, tmp_path: Path, sample_questionnaire
+    ) -> None:
+        style = StyleConfig(protection_password="test_secret")
+        out = tmp_path / "protected.xlsx"
+        generate_questionnaire(sample_questionnaire, style, out)
+        wb = load_workbook(out)
+        assert wb["_meta"].protection.password == wb["Questionnaire"].protection.password
+
+
+class TestFooter:
+    def test_footer_present_by_default(self, generated_xlsx: Path) -> None:
+        wb = load_workbook(generated_xlsx, data_only=True)
+        ws = wb["Questionnaire"]
+        col_a = [ws.cell(row=r, column=1).value for r in range(1, ws.max_row + 1)]
+        assert any("umfrage" in str(v) for v in col_a if v), (
+            "Expected a footer row containing 'umfrage' on the questionnaire sheet"
+        )
+
+    def test_footer_contains_github_url(self, generated_xlsx: Path) -> None:
+        wb = load_workbook(generated_xlsx, data_only=True)
+        ws = wb["Questionnaire"]
+        col_a = [ws.cell(row=r, column=1).value for r in range(1, ws.max_row + 1)]
+        assert any("github.com/scinnod/umfrage" in str(v) for v in col_a if v), (
+            "Expected footer to contain the GitHub project URL"
+        )
+
+    def test_footer_hidden_when_show_footer_false(
+        self, tmp_path: Path, sample_questionnaire
+    ) -> None:
+        style = StyleConfig(show_footer=False)
+        out = tmp_path / "no_footer.xlsx"
+        generate_questionnaire(sample_questionnaire, style, out)
+        wb = load_workbook(out, data_only=True)
+        ws = wb["Questionnaire"]
+        col_a = [ws.cell(row=r, column=1).value for r in range(1, ws.max_row + 1)]
+        assert not any("umfrage" in str(v) for v in col_a if v), (
+            "Footer should not appear when show_footer=False"
+        )
+
+    def test_german_footer_uses_erzeugt(
+        self, tmp_path: Path, sample_questionnaire, sample_style
+    ) -> None:
+        q = sample_questionnaire.model_copy(update={"language": "de"})
+        out = tmp_path / "de_footer.xlsx"
+        generate_questionnaire(q, sample_style, out)
+        wb = load_workbook(out, data_only=True)
+        ws = wb["Questionnaire"]
+        col_a = [ws.cell(row=r, column=1).value for r in range(1, ws.max_row + 1)]
+        assert any("Erzeugt" in str(v) for v in col_a if v), (
+            "German questionnaire should use 'Erzeugt mit umfrage' in the footer"
+        )
+
 
 class TestSheetProtection:
     def test_worksheet_protection_enabled(self, generated_xlsx: Path) -> None:

@@ -83,3 +83,10 @@ column_widths:
 # Set to null (or omit entirely) for password-free protection.
 protection_password: null
 # protection_password: "survey2024"   # Uncomment and change to enable
+
+# ── Footer row on the questionnaire sheet ────────────────────────────────────
+# When true (default), a small footer row is appended after the last question.
+# It shows the tool name ("Generated with umfrage" / "Erzeugt mit umfrage")
+# and links to https://github.com/scinnod/umfrage.
+# Set to false to suppress the footer entirely (e.g. for white-label output).
+show_footer: true

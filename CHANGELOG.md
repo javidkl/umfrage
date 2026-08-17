@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.1] – 2026-08-17
+
+### Added
+- **Footer row on the questionnaire sheet**: each generated `.xlsx` now ends
+  with a small, locked footer row reading "Generated with umfrage" (or
+  "Erzeugt mit umfrage" in German) hyperlinked to the project repository.
+  Opt out by setting `show_footer: false` in `style.yaml`.
+- **`project_url` in `_meta` sheet**: the hidden metadata sheet now stores
+  `project_url = https://github.com/scinnod/umfrage` for human reference.
+- **`COLLABORATORS.md`**: documents project contributor David Kleinhans
+  (Jade University of Applied Sciences, Germany).
+- LICENSE updated with the GitHub project URL and a reference to `COLLABORATORS.md`.
+- New i18n keys `footer_generated_with` in `en.yaml` / `de.yaml`.
+
+### Fixed
+- **`_meta` sheet was unprotected**: the hidden sheet storing structural
+  metadata (used by `umfrage collect`) was not write-protected, so it could
+  be edited accidentally after unhiding, breaking result collection.
+  It is now protected with the same password as the questionnaire sheet.
+
+---
+
 ## [0.2.0] – 2026-08-14
 
 ### Added

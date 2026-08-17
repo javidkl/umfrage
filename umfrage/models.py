@@ -247,3 +247,11 @@ class StyleConfig(BaseModel):
             "since the goal is guidance, not strict enforcement)."
         ),
     )
+    show_footer: bool = Field(
+        default=True,
+        description=(
+            "When true (default), a footer row is appended to the questionnaire sheet "
+            "containing the tool name and a link to https://github.com/scinnod/umfrage. "
+            "Set to false to omit the footer entirely."
+        ),
+    )

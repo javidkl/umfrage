@@ -22,7 +22,14 @@ Hidden "_meta" sheet
 Stores structural metadata for later validation:
   questionnaire_id, config_hash, version, generated (ISO timestamp),
   title, question_ids (JSON array), respondent_fields (JSON array),
-  questionnaire_json (full serialized model for metadata-file reconstruction).
+  questionnaire_json (full serialized model for metadata-file reconstruction),
+  project_url (https://github.com/scinnod/umfrage).
+
+Optional footer row
+-------------------
+When ``StyleConfig.show_footer`` is ``True`` (the default), a final row is
+appended after the last question showing the tool name and a hyperlink to the
+project repository.  Set ``show_footer: false`` in ``style.yaml`` to hide it.
 """
 
 from __future__ import annotations
@@ -42,6 +49,7 @@ from openpyxl.worksheet.datavalidation import DataValidation
 from umfrage.models import AnswerType, Questionnaire, StyleConfig
 from umfrage.styles import (
     apply_answer_style,
+    apply_footer_style,
     apply_header_style,
     apply_question_style,
     apply_respondent_header_style,
@@ -91,6 +99,7 @@ def generate_questionnaire(
     _build_questionnaire_sheet(ws, questionnaire, style, translator)
     _build_meta_sheet(wb, questionnaire)
     _apply_sheet_protection(ws, style)
+    _apply_sheet_protection(wb["_meta"], style)
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
     wb.save(output_path)
@@ -273,6 +282,22 @@ def _build_questionnaire_sheet(ws, questionnaire: Questionnaire, style: StyleCon
     _apply_consolidated_validations(ws, pending_validations, translator)
     _apply_required_formatting(ws, required_answer_cells)
 
+    if style.show_footer:
+        # Spacer before footer
+        ws.row_dimensions[row].height = 8
+        row += 1
+        ws.row_dimensions[row].height = 14
+        footer_text = (
+            f"{translator.t('footer_generated_with')} · "
+            "https://github.com/scinnod/umfrage"
+        )
+        footer_cell = ws.cell(row=row, column=COL_ID, value=footer_text)
+        apply_footer_style(footer_cell)
+        footer_cell.hyperlink = "https://github.com/scinnod/umfrage"
+        ws.merge_cells(
+            start_row=row, start_column=COL_ID, end_row=row, end_column=TOTAL_COLS
+        )
+
 
 def _build_comment_text(q, translator: Translator, resolved_choices: list[str] | None = None) -> str:
     """Compose the Scale/Comment column text for a question."""
@@ -420,6 +445,7 @@ def _build_meta_sheet(wb: Workbook, questionnaire: Questionnaire) -> None:
         # Full model embedded so the collector can reconstruct config without the
         # original questionnaire.yaml being available.
         ("questionnaire_json", questionnaire.model_dump_json()),
+        ("project_url", "https://github.com/scinnod/umfrage"),
     ]
     for row_idx, (key, value) in enumerate(rows, start=1):
         ws_meta.cell(row=row_idx, column=1, value=key)

@@ -98,4 +98,11 @@ def apply_result_header_style(cell, style: StyleConfig) -> None:
     cell.font = make_font(s)
     cell.fill = make_fill(s.background_color)
     cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True)
+
+
+def apply_footer_style(cell) -> None:
+    """Apply subtle footer row style to *cell* (small, italic, gray, locked)."""
+    cell.font = Font(bold=False, italic=True, color="888888", size=8)
+    cell.alignment = Alignment(horizontal="right", vertical="center")
+    cell.protection = Protection(locked=True)
     cell.border = make_thin_border()
