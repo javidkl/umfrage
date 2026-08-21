@@ -176,8 +176,8 @@ def collect_all(
             continue
 
         qid = questionnaire.questionnaire_id()
-        date_str = datetime.date.today().isoformat()
-        result_filename = f"{RESULTS_PREFIX}{qid}_{date_str}.xlsx"
+        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+        result_filename = f"{RESULTS_PREFIX}{qid}_{timestamp}.xlsx"
         result_path = output_dir / result_filename
         output_dir.mkdir(parents=True, exist_ok=True)
 
